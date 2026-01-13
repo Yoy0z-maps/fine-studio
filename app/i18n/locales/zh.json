@@ -1,0 +1,14 @@
+{
+  "tuner": {
+    "title": "调音器"
+  },
+  "metronome": {
+    "title": "节拍"
+  },
+  "chords": {
+    "title": "和弦"
+  },
+  "settings": {
+    "title": "设置"
+  }
+}

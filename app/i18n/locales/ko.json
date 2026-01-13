@@ -1,0 +1,14 @@
+{
+  "tuner": {
+    "title": "튜너"
+  },
+  "metronome": {
+    "title": "템포"
+  },
+  "chords": {
+    "title": "코드"
+  },
+  "settings": {
+    "title": "설정"
+  }
+}
