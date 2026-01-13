@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "fine-tune",
-    "slug": "fine-tune",
+    "name": "fine-studio",
+    "slug": "fine-studio",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
