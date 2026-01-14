@@ -1,0 +1,44 @@
+from pathlib import Path
+
+dir_path = Path("./assets/data/chords/A")
+output_path = Path("./assets/data/chords/CHORDS.ts")
+
+# "-"를 " / "로 변경하고, 루트 대문자로 변경
+def to_display_name(stem: str) -> str:
+    if "_" not in stem:
+        return stem
+
+    left, right = stem.split("_", 1)
+    root = right.upper()
+
+    if left == "":
+        return root
+
+    return f"{left} / {root}"
+
+# path.glob(".extension") 지정한 디렉토리에서 해당 확장자의 파일들을 반환 =>  Path("~.extension")
+# Path("~")는 3가지 속성이 있음, Path("./assets/data/chords/A/7_a#.json") 일 때
+# p.name => 7_a#.json (파일이름.확장자)
+# p.stem => 7_a#(파일 이름)
+# p.suffix => .json(확장자)
+file_stems = [p.stem for p in dir_path.glob("*.json")]
+
+display_map = {
+    stem: to_display_name(stem)
+    for stem in file_stems
+}
+
+with open(output_path, "w", encoding="utf-8") as f:
+    f.write("export const CHORDS_PATH = [\n")
+    for stem in file_stems:
+        f.write(f'  "{stem}",\n')
+    f.write("];\n\n")
+
+    f.write("const ChordMap = {\n")
+    for key, value in display_map.items():
+        f.write(f'  "{key}": "{value}",\n')
+    f.write("};\n\n")
+
+    f.write("export default ChordMap;\n")
+
+print("Successfully Generate File: CHORDS.ts")
