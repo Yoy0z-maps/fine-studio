@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "854750048132",
+    "project_id": "fine-studio-72833",
+    "storage_bucket": "fine-studio-72833.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:854750048132:android:df494a9787d4547f8af7d1",
+        "android_client_info": {
+          "package_name": "com.yoy0zmaps.finestudio"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "854750048132-05i6n4vsft36vk22afn3a0b3ih64lmbf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yoy0zmaps.finestudio",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "854750048132-am2gndrl97eps9277apm2ldu94361m42.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yoy0zmaps.finestudio",
+            "certificate_hash": "635ceeaf0d85f44cabbc40fed84f96b7df9a1c6b"
+          }
+        },
+        {
+          "client_id": "854750048132-ig9ua50absvstbr2qirejktb29qshgl1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yoy0zmaps.finestudio",
+            "certificate_hash": "12c697041d690df7bf0e0a48d9cbf9cc418956dc"
+          }
+        },
+        {
+          "client_id": "854750048132-8s1sdv282ph1rqlullv6n5kea4g05fu9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAt36U42j6_w5RTgy9tpGeC6Z_aGQvT44M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "854750048132-8s1sdv282ph1rqlullv6n5kea4g05fu9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
