@@ -1,0 +1,18 @@
+<lint-module
+    format="1"
+    dir="/Users/johnhan/development/fine-tune/expo-metronome/android"
+    name=":expo-metronome"
+    type="LIBRARY"
+    maven="expo.modules.metronome:expo-metronome:1.0.0"
+    agpVersion="8.11.0"
+    buildFolder="build"
+    bootClassPath="/Users/johnhan/Library/Android/sdk/platforms/android-36/android.jar:/Users/johnhan/Library/Android/sdk/build-tools/35.0.0/core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-36"
+    neverShrinking="true">
+  <lintOptions
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>

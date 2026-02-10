@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "expo-pcm-stream": ["../src/index"],
+      "expo-pcm-stream/*": ["../src/*"]
+    }
+  }
+}

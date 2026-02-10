@@ -3,27 +3,55 @@
     "name": "fine-studio",
     "slug": "fine-studio",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "finetune",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/6b77f879-c522-47ca-be36-eebeeb29d945",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "CFBundleLocalizations": [
+          "en",
+          "ko",
+          "ja",
+          "zh"
+        ],
+        "CFBundleDevelopmentRegion": "ko",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.yoy0zmaps.finestudio"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "RECORD_AUDIO"
+      ],
+      "package": "com.yoy0zmaps.finestudio",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/withInfoPlistLocalization",
       "expo-router",
+      "expo-apple-authentication",
       [
         "expo-splash-screen",
         {
@@ -34,11 +62,28 @@
         }
       ],
       [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent",
+          "addGeneratedScheme": true
+        }
+      ],
+      [
         "expo-localization",
         {
           "supportedLocales": {
-            "ios": ["en", "ko", "ja", "zh"],
-            "android": ["en", "ko", "ja", "zh"]
+            "ios": [
+              "en",
+              "ko",
+              "ja",
+              "zh"
+            ],
+            "android": [
+              "en",
+              "ko",
+              "ja",
+              "zh"
+            ]
           }
         }
       ],
@@ -52,7 +97,6 @@
             "./assets/fonts/pretendard/Pretendard-Medium.ttf",
             "./assets/fonts/pretendard/Pretendard-SemiBold.ttf",
             "./assets/fonts/pretendard/Pretendard-Bold.ttf",
-
             "./assets/fonts/pretendardJP/PretendardJP-Thin.ttf",
             "./assets/fonts/pretendardJP/PretendardJP-Light.ttf",
             "./assets/fonts/pretendardJP/PretendardJP-Regular.ttf",
@@ -130,7 +174,6 @@
               "./assets/fonts/pretendard/Pretendard-Medium.ttf",
               "./assets/fonts/pretendard/Pretendard-SemiBold.ttf",
               "./assets/fonts/pretendard/Pretendard-Bold.ttf",
-
               "./assets/fonts/pretendardJP/PretendardJP-Thin.ttf",
               "./assets/fonts/pretendardJP/PretendardJP-Light.ttf",
               "./assets/fonts/pretendardJP/PretendardJP-Regular.ttf",
@@ -140,11 +183,19 @@
             ]
           }
         }
-      ]
+      ],
+      "@react-native-google-signin/google-signin",
+      "expo-tracking-transparency"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6b77f879-c522-47ca-be36-eebeeb29d945"
+      }
     }
   }
 }

@@ -1,20 +1,23 @@
-import { Colors } from "@/constants/theme";
-// import { useColorScheme } from "@/hooks/use-color-scheme";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Tabs } from "expo-router";
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { useColors } from "@/contexts/ThemeContext";
 
 export default function TabLayout() {
-  // const colorScheme = useColorScheme();
   const { t } = useTranslation("common");
+  const colors = useColors();
 
   return (
     <Tabs
       screenOptions={{
-        // tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
-        tabBarActiveTintColor: Colors.dark.tint,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarStyle: {
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+        },
         headerShown: false,
       }}
     >
@@ -47,10 +50,16 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chords"
         options={{
-          title: t("chords.title"),
+          title: t("library.title"),
           tabBarIcon: ({ color }) => (
-            <Ionicons name="search" size={24} color={color} />
+            <Ionicons name="musical-notes" size={24} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="scales"
+        options={{
+          href: null,
         }}
       />
       <Tabs.Screen

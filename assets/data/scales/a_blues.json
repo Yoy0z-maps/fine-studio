@@ -1,0 +1,139 @@
+{
+  "A_Blues_Scale": {
+    "Pattern_1": {
+      "start_fret": 2,
+      "description": "3번 플랫 중심 (이미지 참고)",
+      "positions": [
+        { "string": 1, "frets": [3, 5], "root_frets": [5], "blue_notes": [] },
+        { "string": 2, "frets": [3, 5], "root_frets": [], "blue_notes": [] },
+        { "string": 3, "frets": [2, 5], "root_frets": [2], "blue_notes": [] },
+        { "string": 4, "frets": [2, 5], "root_frets": [], "blue_notes": [] },
+        {
+          "string": 5,
+          "frets": [3, 5, 6],
+          "root_frets": [5],
+          "blue_notes": [6]
+        },
+        { "string": 6, "frets": [3, 5], "root_frets": [5], "blue_notes": [] }
+      ]
+    },
+    "Pattern_2": {
+      "start_fret": 5,
+      "description": "5번 플랫 중심 (이미지 참고)",
+      "positions": [
+        { "string": 1, "frets": [5, 8], "root_frets": [5], "blue_notes": [] },
+        { "string": 2, "frets": [5, 8], "root_frets": [], "blue_notes": [] },
+        {
+          "string": 3,
+          "frets": [5, 7, 8],
+          "root_frets": [],
+          "blue_notes": [8]
+        },
+        { "string": 4, "frets": [5, 7], "root_frets": [7], "blue_notes": [] },
+        {
+          "string": 5,
+          "frets": [5, 6, 7],
+          "root_frets": [],
+          "blue_notes": [6]
+        },
+        { "string": 6, "frets": [5, 8], "root_frets": [5], "blue_notes": [] }
+      ]
+    },
+    "Pattern_3": {
+      "start_fret": 8,
+      "description": "8번 플랫 중심 (이미지 참고)",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [8, 10, 11],
+          "root_frets": [],
+          "blue_notes": [11]
+        },
+        { "string": 2, "frets": [8, 10], "root_frets": [10], "blue_notes": [] },
+        {
+          "string": 3,
+          "frets": [7, 8, 9],
+          "root_frets": [],
+          "blue_notes": [8]
+        },
+        { "string": 4, "frets": [7, 10], "root_frets": [7], "blue_notes": [] },
+        { "string": 5, "frets": [7, 10], "root_frets": [], "blue_notes": [] },
+        {
+          "string": 6,
+          "frets": [8, 10, 11],
+          "root_frets": [],
+          "blue_notes": [11]
+        }
+      ]
+    },
+    "Pattern_4": {
+      "start_fret": 10,
+      "description": "10번 플랫 중심 (이미지 참고)",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [10, 11, 12],
+          "root_frets": [],
+          "blue_notes": [11]
+        },
+        {
+          "string": 2,
+          "frets": [10, 13],
+          "root_frets": [10],
+          "blue_notes": []
+        },
+        { "string": 3, "frets": [9, 12], "root_frets": [], "blue_notes": [] },
+        {
+          "string": 4,
+          "frets": [10, 12, 13],
+          "root_frets": [],
+          "blue_notes": [13]
+        },
+        {
+          "string": 5,
+          "frets": [10, 12],
+          "root_frets": [12],
+          "blue_notes": []
+        },
+        {
+          "string": 6,
+          "frets": [10, 11, 12],
+          "root_frets": [],
+          "blue_notes": [11]
+        }
+      ]
+    },
+    "Pattern_5": {
+      "start_fret": 12,
+      "description": "12번 플랫 중심 (이미지 참고)",
+      "positions": [
+        { "string": 1, "frets": [12, 15], "root_frets": [], "blue_notes": [] },
+        {
+          "string": 2,
+          "frets": [13, 15, 16],
+          "root_frets": [],
+          "blue_notes": [16]
+        },
+        {
+          "string": 3,
+          "frets": [12, 14],
+          "root_frets": [14],
+          "blue_notes": []
+        },
+        {
+          "string": 4,
+          "frets": [12, 13, 14],
+          "root_frets": [],
+          "blue_notes": [13]
+        },
+        {
+          "string": 5,
+          "frets": [12, 15],
+          "root_frets": [12],
+          "blue_notes": []
+        },
+        { "string": 6, "frets": [12, 15], "root_frets": [], "blue_notes": [] }
+      ]
+    }
+  }
+}

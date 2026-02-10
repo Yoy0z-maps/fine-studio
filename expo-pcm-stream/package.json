@@ -1,0 +1,43 @@
+{
+  "name": "expo-pcm-stream",
+  "version": "0.1.0",
+  "description": "A native Expo module that streams real-time microphone input as fixed-size 16-bit PCM frames to JavaScript, optimized for low-latency audio analysis such as pitch detection and tuning.",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "build": "expo-module build",
+    "clean": "expo-module clean",
+    "lint": "expo-module lint",
+    "test": "expo-module test",
+    "prepare": "expo-module prepare",
+    "prepublishOnly": "expo-module prepublishOnly",
+    "expo-module": "expo-module",
+    "open:ios": "xed example/ios",
+    "open:android": "open -a \"Android Studio\" example/android"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "expo-pcm-stream",
+    "ExpoPcmStream"
+  ],
+  "repository": "https://github.com/Yoy0z-maps/expo-pcm-stream",
+  "bugs": {
+    "url": "https://github.com/Yoy0z-maps/expo-pcm-stream/issues"
+  },
+  "author": "John Han <work.johnhan@gmail.com> (Yoy0z-maps)",
+  "license": "MIT",
+  "homepage": "https://github.com/Yoy0z-maps/expo-pcm-stream#readme",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "expo-module-scripts": "^5.0.8",
+    "expo": "^54.0.27",
+    "react-native": "0.81.5"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

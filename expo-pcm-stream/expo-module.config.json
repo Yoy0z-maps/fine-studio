@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["ExpoPcmStreamModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.pcmstream.ExpoPcmStreamModule"]
+  }
+}

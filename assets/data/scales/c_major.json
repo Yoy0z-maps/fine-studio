@@ -1,0 +1,214 @@
+{
+  "C_Major_Scale": {
+    "Pattern_1": {
+      "start_fret": 2,
+      "description": "이미지 1번 패턴 참고",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [2, 3, 5],
+          "notes": ["파#", "솔", "라"],
+          "root_frets": []
+        },
+        {
+          "string": 2,
+          "frets": [3, 5],
+          "notes": ["레", "미"],
+          "root_frets": []
+        },
+        {
+          "string": 3,
+          "frets": [2, 4, 5],
+          "notes": ["라", "시", "도"],
+          "root_frets": [5]
+        },
+        {
+          "string": 4,
+          "frets": [2, 4, 5],
+          "notes": ["미", "파#", "솔"],
+          "root_frets": []
+        },
+        {
+          "string": 5,
+          "frets": [2, 3, 5],
+          "notes": ["시", "도", "레"],
+          "root_frets": [3]
+        },
+        {
+          "string": 6,
+          "frets": [2, 3, 5],
+          "notes": ["파#", "솔", "라"],
+          "root_frets": []
+        }
+      ]
+    },
+    "Pattern_2": {
+      "start_fret": 4,
+      "description": "이미지 2번 패턴 참고",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [5, 7, 8],
+          "notes": ["라", "시", "도"],
+          "root_frets": [8]
+        },
+        {
+          "string": 2,
+          "frets": [5, 7, 8],
+          "notes": ["미", "파", "솔"],
+          "root_frets": []
+        },
+        {
+          "string": 3,
+          "frets": [4, 5, 7],
+          "notes": ["시", "도", "레"],
+          "root_frets": [5]
+        },
+        {
+          "string": 4,
+          "frets": [5, 7],
+          "notes": ["솔", "라"],
+          "root_frets": []
+        },
+        {
+          "string": 5,
+          "frets": [5, 7, 8],
+          "notes": ["레", "미", "파"],
+          "root_frets": []
+        },
+        {
+          "string": 6,
+          "frets": [5, 7, 8],
+          "notes": ["라", "시", "도"],
+          "root_frets": [8]
+        }
+      ]
+    },
+    "Pattern_3": {
+      "start_fret": 7,
+      "description": "이미지 3번 패턴 참고",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [7, 8, 10],
+          "notes": ["시", "도", "레"],
+          "root_frets": [8]
+        },
+        {
+          "string": 2,
+          "frets": [8, 10],
+          "notes": ["솔", "라"],
+          "root_frets": []
+        },
+        {
+          "string": 3,
+          "frets": [7, 9, 10],
+          "notes": ["레", "미", "파"],
+          "root_frets": []
+        },
+        {
+          "string": 4,
+          "frets": [7, 9, 10],
+          "notes": ["라", "시", "도"],
+          "root_frets": [10]
+        },
+        {
+          "string": 5,
+          "frets": [7, 8, 10],
+          "notes": ["미", "파", "솔"],
+          "root_frets": []
+        },
+        {
+          "string": 6,
+          "frets": [7, 8, 10],
+          "notes": ["시", "도", "레"],
+          "root_frets": [8]
+        }
+      ]
+    },
+    "Pattern_4": {
+      "start_fret": 9,
+      "description": "이미지 4번 패턴 참고",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [10, 12, 13],
+          "notes": ["레", "미", "파"],
+          "root_frets": []
+        },
+        {
+          "string": 2,
+          "frets": [10, 12, 13],
+          "notes": ["라", "시", "도"],
+          "root_frets": [13]
+        },
+        {
+          "string": 3,
+          "frets": [9, 10, 12],
+          "notes": ["미", "파", "솔"],
+          "root_frets": []
+        },
+        {
+          "string": 4,
+          "frets": [9, 10, 12],
+          "notes": ["시", "도", "레"],
+          "root_frets": [10]
+        },
+        {
+          "string": 5,
+          "frets": [10, 12],
+          "notes": ["솔", "라"],
+          "root_frets": []
+        },
+        {
+          "string": 6,
+          "frets": [10, 12, 13],
+          "notes": ["레", "미", "파"],
+          "root_frets": []
+        }
+      ]
+    },
+    "Pattern_5": {
+      "start_fret": 12,
+      "description": "이미지 5번 패턴 참고",
+      "positions": [
+        {
+          "string": 1,
+          "frets": [12, 13, 15],
+          "notes": ["미", "파", "솔"],
+          "root_frets": []
+        },
+        {
+          "string": 2,
+          "frets": [12, 13, 15],
+          "notes": ["시", "도", "레"],
+          "root_frets": [13]
+        },
+        {
+          "string": 3,
+          "frets": [12, 14, 15],
+          "notes": ["솔", "라", "시"],
+          "root_frets": []
+        },
+        {
+          "string": 4,
+          "frets": [12, 14, 15],
+          "notes": ["레", "미", "파"],
+          "root_frets": []
+        },
+        {
+          "string": 5,
+          "frets": [12, 13, 15],
+          "notes": ["라", "시", "도"],
+          "root_frets": [15]
+        },
+        {
+          "string": 6,
+          "frets": [12, 13, 15],
+          "notes": ["미", "파", "솔"],
+          "root_frets": []
+        }
+      ]
+    }
+  }
+}
