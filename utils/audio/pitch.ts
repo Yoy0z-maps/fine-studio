@@ -1,128 +1,229 @@
-// YIN pitch detection algorithm
-// Based on "YIN, a fundamental frequency estimator for speech and music"
-// by de Cheveigné & Kawahara (2002)
-// Much more robust against octave errors than plain autocorrelation
+// McLeod Pitch Method (MPM) pitch detection, with FFT-accelerated autocorrelation.
+// Reference: McLeod & Wyvill (2005), "A Smarter Way to Find Pitch".
+//
+// Replaces the previous plain-YIN implementation for two reasons:
+// - The difference function there was an O(n^2) direct sum (~1M ops for a 2048-sample
+//   window), which forced the caller to throttle detection to every other audio hop.
+//   Computing the autocorrelation via FFT (Wiener-Khinchin theorem) instead is
+//   O(n log n) and costs a fraction of a millisecond, so every hop can be analyzed.
+// - MPM's peak-picking (the first "key maximum" within `CLARITY_THRESHOLD` of the
+//   global peak, rather than the first threshold crossing) is more resistant to
+//   octave errors on real plucked-string tones, where an overtone can outweigh the
+//   fundamental. It also yields a natural 0..1 confidence value (`clarity`) that
+//   callers can use to gate false locks on noise.
 
-// Guitar frequency range (with margin for detuning)
-const MIN_FREQ = 70; // Below E2 (82.4Hz)
-const MAX_FREQ = 400; // Above E4 (329.6Hz)
+import { fftInPlace, nextPow2 } from "./fft";
 
-// YIN threshold - lower = stricter (0.1-0.2 typical)
-// 0.20 works better for G string complex harmonics
-const YIN_THRESHOLD = 0.20;
+export type PitchDetection = {
+  freq: number;
+  clarity: number; // 0..1 confidence, from the chosen NSDF peak height
+};
 
-export function autoCorrelatePitch(
-  input: Float32Array,
-  sampleRate: number
-): number | null {
-  const size = input.length;
-  const halfSize = Math.floor(size / 2);
+const CLARITY_THRESHOLD = 0.93; // McLeod's "k" - accept the first peak within 93% of the global max
+const MIN_CLARITY = 0.5; // below this the signal isn't periodic enough to trust at all
+const HIGHPASS_CUTOFF_HZ = 35; // kills DC/rumble well below any supported note, nothing musical
 
-  // Calculate lag range from frequency limits
-  const minLag = Math.floor(sampleRate / MAX_FREQ); // ~110 samples at 44100Hz
-  const maxLag = Math.floor(sampleRate / MIN_FREQ); // ~630 samples at 44100Hz
+// ---- reusable scratch buffers, lazily (re)sized to the caller's window length ----
+let scratchWindowSize = 0;
+let scratchFftSize = 0;
+let scratchRe: Float64Array;
+let scratchIm: Float64Array;
+let scratchPrefixSq: Float64Array;
+let scratchNsdf: Float64Array;
+let scratchFiltered: Float64Array;
 
-  // Ensure we have enough samples
-  if (halfSize < maxLag) return null;
+function ensureScratch(windowSize: number) {
+  if (scratchWindowSize === windowSize) return;
+  scratchWindowSize = windowSize;
+  scratchFftSize = nextPow2(2 * windowSize);
+  scratchRe = new Float64Array(scratchFftSize);
+  scratchIm = new Float64Array(scratchFftSize);
+  scratchPrefixSq = new Float64Array(windowSize + 1);
+  scratchNsdf = new Float64Array(windowSize);
+  scratchFiltered = new Float64Array(windowSize);
+}
 
-  // Step 1: DC removal
+// DC removal + one-pole high-pass. Cleans up mic rumble/handling noise without
+// touching anything in the supported musical range.
+function preprocess(input: Float32Array, sampleRate: number): Float64Array {
+  const n = input.length;
   let mean = 0;
-  for (let i = 0; i < size; i++) mean += input[i];
-  mean /= size;
+  for (let i = 0; i < n; i++) mean += input[i];
+  mean /= n;
 
-  const buf = new Float32Array(size);
-  for (let i = 0; i < size; i++) buf[i] = input[i] - mean;
+  const rc = 1 / (2 * Math.PI * HIGHPASS_CUTOFF_HZ);
+  const dt = 1 / sampleRate;
+  const alpha = rc / (rc + dt);
 
-  // Step 2: Compute difference function d(tau)
-  // d(tau) = sum of (buf[j] - buf[j+tau])^2
-  const diff = new Float32Array(halfSize);
-  for (let tau = 0; tau < halfSize; tau++) {
-    let sum = 0;
-    for (let j = 0; j < halfSize; j++) {
-      const delta = buf[j] - buf[j + tau];
-      sum += delta * delta;
-    }
-    diff[tau] = sum;
+  const out = scratchFiltered;
+  let prevIn = input[0] - mean;
+  let prevOut = 0;
+  out[0] = 0;
+  for (let i = 1; i < n; i++) {
+    const x = input[i] - mean;
+    prevOut = alpha * (prevOut + x - prevIn);
+    prevIn = x;
+    out[i] = prevOut;
+  }
+  return out;
+}
+
+// Autocorrelation via Wiener-Khinchin: acf = IFFT(FFT(x) * conj(FFT(x))).
+// `filtered` must already be zero-padded into scratchRe/scratchIm by the caller.
+function autocorrelationFFT(): Float64Array {
+  fftInPlace(scratchRe, scratchIm, false);
+  for (let i = 0; i < scratchFftSize; i++) {
+    const power = scratchRe[i] * scratchRe[i] + scratchIm[i] * scratchIm[i];
+    scratchRe[i] = power;
+    scratchIm[i] = 0;
+  }
+  fftInPlace(scratchRe, scratchIm, true);
+  return scratchRe; // re[tau] = autocorrelation at lag tau, valid for tau = 0..windowSize-1
+}
+
+/**
+ * Detects the fundamental frequency of `input` within [minFreq, maxFreq].
+ * Returns null if the signal isn't periodic enough to trust (see MIN_CLARITY).
+ */
+export function detectPitch(
+  input: Float32Array,
+  sampleRate: number,
+  minFreq: number,
+  maxFreq: number,
+): PitchDetection | null {
+  const windowSize = input.length;
+  const maxLag = Math.min(windowSize - 1, Math.floor(sampleRate / minFreq));
+  const minLag = Math.max(1, Math.floor(sampleRate / maxFreq));
+  if (maxLag <= minLag) return null;
+
+  ensureScratch(windowSize);
+  const filtered = preprocess(input, sampleRate);
+
+  scratchRe.fill(0);
+  scratchIm.fill(0);
+  scratchRe.set(filtered);
+  const acf = autocorrelationFFT();
+
+  const prefixSq = scratchPrefixSq;
+  prefixSq[0] = 0;
+  for (let i = 0; i < windowSize; i++) {
+    prefixSq[i + 1] = prefixSq[i] + filtered[i] * filtered[i];
+  }
+  const totalSq = prefixSq[windowSize];
+
+  const nsdf = scratchNsdf;
+  for (let tau = 0; tau <= maxLag; tau++) {
+    const e1 = prefixSq[windowSize - tau]; // sum x(j)^2, j = 0..W-tau-1
+    const e2 = totalSq - prefixSq[tau]; // sum x(j+tau)^2, j = 0..W-tau-1
+    const m = e1 + e2;
+    nsdf[tau] = m > 0 ? (2 * acf[tau]) / m : 0;
   }
 
-  // Step 3: Cumulative mean normalized difference function (CMNDF)
-  // This is the key to YIN - prevents octave errors
-  const cmndf = new Float32Array(halfSize);
-  cmndf[0] = 1;
-  let runningSum = 0;
-  for (let tau = 1; tau < halfSize; tau++) {
-    runningSum += diff[tau];
-    cmndf[tau] = diff[tau] / (runningSum / tau);
-  }
+  // McLeod peak-picking: within each lobe between a positive-going and the following
+  // negative-going zero crossing, keep only the local maximum ("key maximum"). Then
+  // pick the first key maximum within CLARITY_THRESHOLD of the global one - favors the
+  // fundamental's peak over a stronger-but-wrong harmonic peak at a shorter lag.
+  let bestTau = -1;
+  let bestValue = 0;
+  let maxPeakValue = 0;
+  const peakTaus: number[] = [];
+  const peakValues: number[] = [];
 
-  // Step 4: Absolute threshold
-  // Find first tau where CMNDF goes below threshold (within frequency range)
-  let tauEstimate = -1;
-  for (let tau = minLag; tau < Math.min(maxLag, halfSize); tau++) {
-    if (cmndf[tau] < YIN_THRESHOLD) {
-      // Find the local minimum after crossing threshold
-      while (tau + 1 < halfSize && cmndf[tau + 1] < cmndf[tau]) {
-        tau++;
+  let tau = 1;
+  while (tau < maxLag) {
+    while (tau < maxLag && nsdf[tau] > 0) tau++;
+    if (tau >= maxLag) break;
+    while (tau < maxLag && nsdf[tau] <= 0) tau++;
+
+    let peakTau = tau;
+    let peakVal = nsdf[tau];
+    while (tau < maxLag && nsdf[tau] > 0) {
+      if (nsdf[tau] > peakVal) {
+        peakVal = nsdf[tau];
+        peakTau = tau;
       }
-      tauEstimate = tau;
+      tau++;
+    }
+    if (peakTau >= minLag && peakTau <= maxLag) {
+      peakTaus.push(peakTau);
+      peakValues.push(peakVal);
+      if (peakVal > maxPeakValue) maxPeakValue = peakVal;
+    }
+  }
+
+  if (peakTaus.length === 0 || maxPeakValue < MIN_CLARITY) return null;
+
+  for (let i = 0; i < peakTaus.length; i++) {
+    if (peakValues[i] >= CLARITY_THRESHOLD * maxPeakValue) {
+      bestTau = peakTaus[i];
+      bestValue = peakValues[i];
       break;
     }
   }
 
-  // No valid pitch found - signal might be noise or out of range
-  if (tauEstimate < minLag) return null;
-
-  // Step 5: Parabolic interpolation for sub-sample accuracy
-  const t = tauEstimate;
-  if (t > 0 && t < halfSize - 1) {
-    const s0 = cmndf[t - 1];
-    const s1 = cmndf[t];
-    const s2 = cmndf[t + 1];
-    const shift = (s2 - s0) / (2 * (2 * s1 - s0 - s2));
-    if (Math.abs(shift) < 1) {
-      const betterTau = t + shift;
-      const freq = sampleRate / betterTau;
-      // Final range check
-      if (freq >= MIN_FREQ && freq <= MAX_FREQ) {
-        return freq;
-      }
+  // Parabolic interpolation around the chosen peak for sub-sample lag accuracy.
+  let betterTau = bestTau;
+  if (bestTau > minLag && bestTau < maxLag) {
+    const s0 = nsdf[bestTau - 1];
+    const s1 = nsdf[bestTau];
+    const s2 = nsdf[bestTau + 1];
+    const denom = 2 * (2 * s1 - s0 - s2);
+    if (Math.abs(denom) > 1e-12) {
+      const shift = (s2 - s0) / denom;
+      if (Math.abs(shift) < 1) betterTau = bestTau + shift;
     }
   }
 
-  const freq = sampleRate / tauEstimate;
-  if (freq >= MIN_FREQ && freq <= MAX_FREQ) {
-    return freq;
-  }
+  const freq = sampleRate / betterTau;
+  if (freq < minFreq || freq > maxFreq) return null;
 
-  return null;
+  return { freq, clarity: bestValue };
 }
 
-// Median filter for smoothing pitch detection
-// Removes outliers that cause UI flickering
-const HISTORY_SIZE = 5;
-let pitchHistory: number[] = [];
+// Adaptive smoothing: snaps instantly on a genuine note change (confirmed across two
+// consecutive readings so a single stray frame can't flicker the display), and gently
+// smooths small jitter/vibrato while a note is held so the reading doesn't wobble.
+const JUMP_CENTS = 50; // half a semitone - past this it's "a different note", not jitter
+const CONFIRM_CENTS = 20; // how tightly two consecutive jump candidates must agree
+const SMOOTHING = 0.3; // EMA factor applied only while holding within the same note
 
-export function getSmoothedPitch(rawPitch: number | null): number | null {
-  if (rawPitch === null) {
-    // Keep some history for continuity, but decay
-    if (pitchHistory.length > 0) {
-      pitchHistory.shift();
+export class PitchTracker {
+  private smoothedFreq: number | null = null;
+  private pendingFreq: number | null = null;
+
+  update(detection: PitchDetection | null): number | null {
+    if (!detection) return this.smoothedFreq;
+    const freq = detection.freq;
+
+    if (this.smoothedFreq == null) {
+      this.smoothedFreq = freq;
+      this.pendingFreq = null;
+      return freq;
     }
-    return null;
+
+    const delta = Math.abs(1200 * Math.log2(freq / this.smoothedFreq));
+
+    if (delta <= JUMP_CENTS) {
+      this.pendingFreq = null;
+      this.smoothedFreq += SMOOTHING * (freq - this.smoothedFreq);
+      return this.smoothedFreq;
+    }
+
+    if (
+      this.pendingFreq != null &&
+      Math.abs(1200 * Math.log2(freq / this.pendingFreq)) <= CONFIRM_CENTS
+    ) {
+      this.smoothedFreq = freq;
+      this.pendingFreq = null;
+    } else {
+      this.pendingFreq = freq;
+    }
+
+    return this.smoothedFreq;
   }
 
-  pitchHistory.push(rawPitch);
-  if (pitchHistory.length > HISTORY_SIZE) {
-    pitchHistory.shift();
+  reset(): void {
+    this.smoothedFreq = null;
+    this.pendingFreq = null;
   }
-
-  if (pitchHistory.length < 3) return rawPitch;
-
-  // Median filter - removes outliers
-  const sorted = [...pitchHistory].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
-export function resetPitchHistory() {
-  pitchHistory = [];
 }

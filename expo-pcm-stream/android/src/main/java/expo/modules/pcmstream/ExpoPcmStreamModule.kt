@@ -100,24 +100,39 @@ class ExpoPcmStreamModule : Module() {
     }
 
     private fun readAudioData() {
-        val buffer = ShortArray(frameSize)
-        val accumulator = mutableListOf<Short>()
+        val readBuffer = ShortArray(frameSize)
+
+        // Plain ShortArray ring buffer - the previous version used a mutableListOf<Short>
+        // (boxing every sample) and cleared each frame with `frameSize` calls to
+        // removeAt(0), each an O(n) shift. That made frame extraction O(frameSize^2) on
+        // this MAX_PRIORITY thread, which could fall behind AudioRecord's internal
+        // buffer and cause the dropped/glitched frames a tuner would perceive as lag.
+        val ringCapacity = frameSize * 4
+        val ring = ShortArray(ringCapacity)
+        var writeIndex = 0
+        var available = 0
+
+        val frame = ShortArray(frameSize)
+        val byteBuffer = ByteBuffer.allocate(frameSize * 2).order(ByteOrder.LITTLE_ENDIAN)
 
         while (isRecording) {
-            val readCount = audioRecord?.read(buffer, 0, frameSize) ?: -1
+            val readCount = audioRecord?.read(readBuffer, 0, frameSize) ?: -1
 
             if (readCount > 0) {
                 for (i in 0 until readCount) {
-                    accumulator.add(buffer[i])
+                    ring[writeIndex] = readBuffer[i]
+                    writeIndex = (writeIndex + 1) % ringCapacity
                 }
+                available = minOf(ringCapacity, available + readCount)
 
-                while (accumulator.size >= frameSize) {
-                    val frame = accumulator.take(frameSize)
-                    repeat(frameSize) { accumulator.removeAt(0) }
+                while (available >= frameSize) {
+                    val start = (writeIndex - available + ringCapacity) % ringCapacity
+                    for (i in 0 until frameSize) {
+                        frame[i] = ring[(start + i) % ringCapacity]
+                    }
+                    available -= frameSize
 
-                    // Convert ShortArray to ByteArray (Little Endian)
-                    val byteBuffer = ByteBuffer.allocate(frameSize * 2)
-                    byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+                    byteBuffer.clear()
                     for (sample in frame) {
                         byteBuffer.putShort(sample)
                     }

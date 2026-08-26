@@ -12,11 +12,7 @@ import {
   startPcm,
   stopPcm,
 } from "@/utils/audio/pcm";
-import {
-  autoCorrelatePitch,
-  getSmoothedPitch,
-  resetPitchHistory,
-} from "@/utils/audio/pitch";
+import { detectPitch, PitchTracker } from "@/utils/audio/pitch";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { StyleSheet, TouchableOpacity, View, Dimensions, Platform } from "react-native";
@@ -46,11 +42,19 @@ const WINDOW = 2048;
 const MAX_CENTS_UI = 50;
 const GATE = 0.002;
 const FADE_OUT_MS = 300;
-const ALPHA = 0.4;
 const LOCK_CENTS = 10;
 const LOCK_MS = 400;
+const LOCK_MIN_CLARITY = 0.8; // require a confident detection before showing "in tune"
 const SWITCH_CENTS = 35;
 const UI_INTERVAL = 50;
+
+// Standard mode is deliberately narrow (tailored to guitar + margin for detuning).
+// Chromatic mode needs to cover any note - the old fixed 70-400Hz range couldn't even
+// detect a ukulele's open A string (440Hz) or a guitar's high frets.
+const STANDARD_MIN_FREQ = 70;
+const STANDARD_MAX_FREQ = 400;
+const CHROMATIC_MIN_FREQ = 65;
+const CHROMATIC_MAX_FREQ = 1500;
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const BASE_GAUGE_SIZE = Math.min(SCREEN_WIDTH - 48, 320);
@@ -88,9 +92,7 @@ export default function TunerScreen() {
   // ===== DSP refs =====
   const ringRef = useRef<Float32Array>(new Float32Array(WINDOW));
   const filledRef = useRef(0);
-  const smoothHzRef = useRef<number | null>(null);
-  const lastHzRef = useRef<number | null>(null);
-  const lastHzAtRef = useRef(0);
+  const pitchTrackerRef = useRef(new PitchTracker());
   const targetRef = useRef<{
     name: string;
     freq: number;
@@ -101,10 +103,8 @@ export default function TunerScreen() {
   const silentSinceRef = useRef<number | null>(null);
 
   // ===== Performance refs =====
-  const processingRef = useRef(false);
   const lastUiUpdateRef = useRef(0);
   const pendingInfoRef = useRef<Info>({});
-  const frameCountRef = useRef(0);
 
   const [info, setInfo] = useState<Info>({});
   const [isStandardMode, setIsStandardMode] = useState(true);
@@ -114,6 +114,9 @@ export default function TunerScreen() {
     modeRef.current = isStandardMode;
     targetRef.current = null;
     silentSinceRef.current = null;
+    lockSinceRef.current = null;
+    lastNoteRef.current = null;
+    pitchTrackerRef.current.reset();
   }, [isStandardMode]);
 
   // Update animations when info changes
@@ -195,8 +198,7 @@ export default function TunerScreen() {
               locked: false,
               guitarString: undefined,
             };
-            smoothHzRef.current = null;
-            lastHzRef.current = null;
+            pitchTrackerRef.current.reset();
             targetRef.current = null;
             lockSinceRef.current = null;
           } else {
@@ -213,17 +215,12 @@ export default function TunerScreen() {
 
         silentSinceRef.current = null;
 
-        const detectedHz = autoCorrelatePitch(ringRef.current, sampleRate);
-        const rawHz = getSmoothedPitch(detectedHz);
-        if (!rawHz) return;
-
-        const prevHz = smoothHzRef.current;
-        const smoothedHz =
-          prevHz == null ? rawHz : ALPHA * rawHz + (1 - ALPHA) * prevHz;
-
-        smoothHzRef.current = smoothedHz;
-        lastHzRef.current = smoothedHz;
-        lastHzAtRef.current = now;
+        const [minFreq, maxFreq] = modeRef.current
+          ? [STANDARD_MIN_FREQ, STANDARD_MAX_FREQ]
+          : [CHROMATIC_MIN_FREQ, CHROMATIC_MAX_FREQ];
+        const detected = detectPitch(ringRef.current, sampleRate, minFreq, maxFreq);
+        const smoothedHz = pitchTrackerRef.current.update(detected);
+        if (!smoothedHz) return;
 
         let noteName: string;
         let cents: number;
@@ -263,23 +260,26 @@ export default function TunerScreen() {
           targetRef.current = null;
         }
 
-        const inTune = Math.abs(cents) <= LOCK_CENTS;
-        if (inTune) {
-          if (lastNoteRef.current !== noteName) {
+        // Only a fresh, confident detection may advance or reset the lock timer - a
+        // single transient miss (detected == null, still showing the held smoothedHz)
+        // just holds whatever lock state was already in progress instead of flickering.
+        if (detected && detected.clarity >= LOCK_MIN_CLARITY) {
+          const inTune = Math.abs(cents) <= LOCK_CENTS;
+          if (inTune) {
+            if (lastNoteRef.current !== noteName) {
+              lastNoteRef.current = noteName;
+              lockSinceRef.current = now;
+            } else if (lockSinceRef.current == null) {
+              lockSinceRef.current = now;
+            }
+          } else {
             lastNoteRef.current = noteName;
-            lockSinceRef.current = now;
-          } else if (lockSinceRef.current == null) {
-            lockSinceRef.current = now;
+            lockSinceRef.current = null;
           }
-        } else {
-          lastNoteRef.current = noteName;
-          lockSinceRef.current = null;
         }
 
         const locked =
-          inTune &&
-          lockSinceRef.current != null &&
-          now - lockSinceRef.current >= LOCK_MS;
+          lockSinceRef.current != null && now - lockSinceRef.current >= LOCK_MS;
         pendingInfoRef.current = {
           sr: sampleRate,
           rms,
@@ -298,20 +298,7 @@ export default function TunerScreen() {
         if (hopFrame.length !== HOP) return;
 
         pushHop(hopFrame);
-
-        frameCountRef.current++;
-        if (frameCountRef.current % 2 !== 0) return;
-
-        if (processingRef.current) return;
-        processingRef.current = true;
-
-        setTimeout(() => {
-          try {
-            processAudio(hopFrame, sampleRate);
-          } finally {
-            processingRef.current = false;
-          }
-        }, 0);
+        processAudio(hopFrame, sampleRate);
       });
 
       startPcm(HOP);
@@ -319,7 +306,7 @@ export default function TunerScreen() {
       return () => {
         sub.remove();
         stopPcm();
-        resetPitchHistory();
+        pitchTrackerRef.current.reset();
         silentSinceRef.current = null;
       };
     }, [isGranted]),
