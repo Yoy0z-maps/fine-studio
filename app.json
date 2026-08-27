@@ -170,7 +170,15 @@
         }
       ],
       "@react-native-google-signin/google-signin",
-      "expo-tracking-transparency"
+      "expo-tracking-transparency",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
