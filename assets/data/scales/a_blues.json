@@ -11,7 +11,7 @@
         {
           "string": 5,
           "frets": [3, 5, 6],
-          "root_frets": [5],
+          "root_frets": [],
           "blue_notes": [6]
         },
         { "string": 6, "frets": [3, 5], "root_frets": [5], "blue_notes": [] }

@@ -18,13 +18,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type LanguageCode = "en" | "ko" | "ja" | "zh";
+type LanguageCode = "en" | "ko" | "ja" | "zh" | "es" | "fr";
 
 const languages: { code: LanguageCode; labelKey: string }[] = [
   { code: "en", labelKey: "english" },
   { code: "ko", labelKey: "korean" },
   { code: "ja", labelKey: "japanese" },
   { code: "zh", labelKey: "chinese" },
+  { code: "es", labelKey: "spanish" },
+  { code: "fr", labelKey: "french" },
 ];
 
 // TODO: 실제 URL로 변경하세요

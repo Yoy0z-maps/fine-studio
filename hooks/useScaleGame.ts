@@ -33,7 +33,21 @@ const DIFFICULTY_CONFIG: Record<ScaleDifficulty, ScaleDifficultyConfig> = {
   },
 };
 
-function getRandomQuestion(difficulty: ScaleDifficulty): ScaleGameQuestion | null {
+// ScaleGameFretboard's interactive touch grid can't adapt to the hidden
+// answer's fret range without leaking it, so when the pattern is hidden it
+// always falls back to a fixed window covering open + frets 1-7.
+const INTERACTIVE_MAX_FRET = 7;
+
+function isPlayableInteractively(pattern: ScalePattern): boolean {
+  return pattern.positions.every((pos) =>
+    pos.frets.every((fret) => fret <= INTERACTIVE_MAX_FRET)
+  );
+}
+
+function getRandomQuestion(
+  difficulty: ScaleDifficulty,
+  gameMode: ScaleGameMode
+): ScaleGameQuestion | null {
   const config = DIFFICULTY_CONFIG[difficulty];
 
   // 랜덤 스케일 선택
@@ -41,8 +55,16 @@ function getRandomQuestion(difficulty: ScaleDifficulty): ScaleGameQuestion | nul
   const scaleInfo = SCALE_LIST.find((s) => s.id === scaleId);
   if (!scaleInfo) return null;
 
-  // 랜덤 패턴 선택
-  const patternKeys = getPatternKeys(scaleId);
+  // 랜덤 패턴 선택 - "Play" 모드는 고정된 1-7프렛 그리드로만 입력할 수 있으므로
+  // 그 안에 들어오는 패턴만 사용한다. "Identify" 모드는 표시만 하면 되므로
+  // (ScaleGameFretboard가 어떤 범위든 맞춰 그린다) 모든 패턴을 사용할 수 있다.
+  let patternKeys = getPatternKeys(scaleId);
+  if (gameMode === "play") {
+    patternKeys = patternKeys.filter((key) => {
+      const pattern = getPattern(scaleId, key);
+      return pattern != null && isPlayableInteractively(pattern);
+    });
+  }
   if (patternKeys.length === 0) return null;
 
   const patternKey = patternKeys[Math.floor(Math.random() * patternKeys.length)];
@@ -101,12 +123,12 @@ export function useScaleGame(): UseScaleGameReturn {
   const feedbackOpacity = useSharedValue(0);
 
   const nextQuestion = useCallback(() => {
-    const newQuestion = getRandomQuestion(difficulty);
+    const newQuestion = getRandomQuestion(difficulty, gameMode);
     setQuestion(newQuestion);
     setFeedback(null);
     setShowAnswer(false);
     setUserNotes(new Set());
-  }, [difficulty]);
+  }, [difficulty, gameMode]);
 
   const startGame = useCallback(() => {
     setIsGameActive(true);
@@ -115,9 +137,9 @@ export function useScaleGame(): UseScaleGameReturn {
     setFeedback(null);
     setShowAnswer(false);
     setUserNotes(new Set());
-    const newQuestion = getRandomQuestion(difficulty);
+    const newQuestion = getRandomQuestion(difficulty, gameMode);
     setQuestion(newQuestion);
-  }, [difficulty]);
+  }, [difficulty, gameMode]);
 
   const endGame = useCallback(() => {
     setIsGameActive(false);

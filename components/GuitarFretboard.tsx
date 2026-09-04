@@ -1,7 +1,6 @@
 import React from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import Svg, { Circle, Line, Rect, Text as SvgText } from "react-native-svg";
-import AppText from "@/components/AppText";
 import { useColors } from "@/contexts/ThemeContext";
 import { RawChordPosition, FINGER_COLORS } from "@/types/chord";
 
@@ -11,9 +10,8 @@ const PADDING_LEFT = 24; // 뮤트 X, 오픈 O 표시 공간
 const PADDING_RIGHT = 16;
 const FRETBOARD_WIDTH = SCREEN_WIDTH - 80;
 const SVG_WIDTH = FRETBOARD_WIDTH + PADDING_LEFT + PADDING_RIGHT;
-const FRET_COUNT = 5;
+const MIN_FRET_COUNT = 5;
 const STRING_COUNT = 6;
-const FRET_WIDTH = FRETBOARD_WIDTH / FRET_COUNT;
 const STRING_SPACING = 32;
 const FRET_NUMBER_HEIGHT = 24;
 const PADDING_TOP = FRET_NUMBER_HEIGHT;
@@ -40,19 +38,16 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
   const frets = position.frets.split("").map(parseFret);
   const fingers = position.fingers.split("").map((c) => parseInt(c, 10));
 
-  // 표시할 프렛 범위 계산
+  // 표시할 프렛 범위 계산 - 5프렛보다 넓게 벌어진 보이싱(예: 하이 포지션 바레
+  // 코드)도 모든 음이 창 안에 들어오도록 필요하면 창을 넓힌다. 고정폭이면
+  // 5프렛을 넘는 음의 손가락 마커가 화면 밖으로 밀려 사라진다.
   const playedFrets = frets.filter((f) => f > 0);
   const minFret = playedFrets.length > 0 ? Math.min(...playedFrets) : 1;
-  const maxFret = playedFrets.length > 0 ? Math.max(...playedFrets) : 5;
+  const maxFret = playedFrets.length > 0 ? Math.max(...playedFrets) : MIN_FRET_COUNT;
 
-  // 시작 프렛 결정
-  let baseFret = 1;
-  if (minFret > 4) {
-    baseFret = minFret;
-  }
-  if (maxFret > baseFret + FRET_COUNT - 1) {
-    baseFret = Math.max(1, maxFret - FRET_COUNT + 1);
-  }
+  const baseFret = minFret > 4 ? minFret : 1;
+  const fretCount = Math.max(MIN_FRET_COUNT, maxFret - baseFret + 1);
+  const fretWidth = FRETBOARD_WIDTH / fretCount;
 
   // 바레 코드 정보 파싱
   const barreFretsSet = new Set(
@@ -66,9 +61,9 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
     <View style={styles.container}>
       <Svg width={SVG_WIDTH} height={SVG_HEIGHT}>
         {/* 프렛 번호 (지판 위) */}
-        {Array.from({ length: FRET_COUNT }).map((_, i) => {
+        {Array.from({ length: fretCount }).map((_, i) => {
           const fretNum = baseFret + i;
-          const x = PADDING_LEFT + (i + 0.5) * FRET_WIDTH;
+          const x = PADDING_LEFT + (i + 0.5) * fretWidth;
           return (
             <SvgText
               key={`fret-num-${i}`}
@@ -95,14 +90,14 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
         />
 
         {/* 프렛 라인 (세로) */}
-        {Array.from({ length: FRET_COUNT + 1 }).map((_, i) => {
+        {Array.from({ length: fretCount + 1 }).map((_, i) => {
           const isNut = i === 0 && baseFret === 1;
           return (
             <Line
               key={`fret-${i}`}
-              x1={PADDING_LEFT + i * FRET_WIDTH}
+              x1={PADDING_LEFT + i * fretWidth}
               y1={fretboardY}
-              x2={PADDING_LEFT + i * FRET_WIDTH}
+              x2={PADDING_LEFT + i * fretWidth}
               y2={fretboardY + FRETBOARD_CONTENT_HEIGHT}
               stroke={isNut ? "#D4A574" : "#A0A0A0"}
               strokeWidth={isNut ? 8 : 3}
@@ -129,9 +124,9 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
 
         {/* 프렛 마커 */}
         {[3, 5, 7, 9, 12].map((fretNum) => {
-          if (fretNum < baseFret || fretNum >= baseFret + FRET_COUNT) return null;
+          if (fretNum < baseFret || fretNum >= baseFret + fretCount) return null;
           const fretPos = fretNum - baseFret + 1;
-          const x = PADDING_LEFT + (fretPos - 0.5) * FRET_WIDTH;
+          const x = PADDING_LEFT + (fretPos - 0.5) * fretWidth;
           const y = fretboardY + 8 + (STRING_SPACING * (STRING_COUNT - 1)) / 2;
 
           if (fretNum === 12) {
@@ -197,11 +192,11 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
           if (fret <= 0) return null;
 
           const displayFret = fret - baseFret + 1;
-          if (displayFret < 1 || displayFret > FRET_COUNT) return null;
+          if (displayFret < 1 || displayFret > fretCount) return null;
 
           const fingerNum = fingers[stringIndex] || 0;
           const screenIndex = STRING_COUNT - 1 - stringIndex;
-          const x = PADDING_LEFT + (displayFret - 0.5) * FRET_WIDTH;
+          const x = PADDING_LEFT + (displayFret - 0.5) * fretWidth;
           const y = fretboardY + 8 + screenIndex * STRING_SPACING;
 
           return (
@@ -233,7 +228,7 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
         {/* 바레 코드 */}
         {Array.from(barreFretsSet).map((barreFret) => {
           const displayFret = barreFret - baseFret + 1;
-          if (displayFret < 1 || displayFret > FRET_COUNT) return null;
+          if (displayFret < 1 || displayFret > fretCount) return null;
 
           const barreStrings = frets
             .map((f, idx) => (f === barreFret ? idx : -1))
@@ -243,7 +238,7 @@ export default function GuitarFretboard({ position }: GuitarFretboardProps) {
           const firstString = Math.min(...barreStrings);
           const lastString = Math.max(...barreStrings);
 
-          const x = PADDING_LEFT + (displayFret - 0.5) * FRET_WIDTH;
+          const x = PADDING_LEFT + (displayFret - 0.5) * fretWidth;
           const topScreenIndex = STRING_COUNT - 1 - lastString;
           const bottomScreenIndex = STRING_COUNT - 1 - firstString;
           const topY = fretboardY + 8 + topScreenIndex * STRING_SPACING;

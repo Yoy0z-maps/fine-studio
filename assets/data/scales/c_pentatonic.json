@@ -5,7 +5,7 @@
       "positions": [
         { "string": 1, "frets": [8, 10], "root_frets": [8] },
         { "string": 2, "frets": [8, 10], "root_frets": [] },
-        { "string": 3, "frets": [7, 9], "root_frets": [9] },
+        { "string": 3, "frets": [7, 9], "root_frets": [] },
         { "string": 4, "frets": [7, 10], "root_frets": [10] },
         { "string": 5, "frets": [7, 10], "root_frets": [] },
         { "string": 6, "frets": [8, 10], "root_frets": [8] }
@@ -14,12 +14,12 @@
     "Pattern_2": {
       "center_fret": 10,
       "positions": [
-        { "string": 1, "frets": [10, 12], "root_frets": [10] },
+        { "string": 1, "frets": [10, 12], "root_frets": [] },
         { "string": 2, "frets": [10, 13], "root_frets": [13] },
-        { "string": 3, "frets": [9, 12], "root_frets": [9] },
+        { "string": 3, "frets": [9, 12], "root_frets": [] },
         { "string": 4, "frets": [10, 12], "root_frets": [10] },
         { "string": 5, "frets": [10, 12], "root_frets": [] },
-        { "string": 6, "frets": [10, 12], "root_frets": [10] }
+        { "string": 6, "frets": [10, 12], "root_frets": [] }
       ]
     },
     "Pattern_3": {
@@ -36,12 +36,12 @@
     "Pattern_4": {
       "center_fret": 3,
       "positions": [
-        { "string": 1, "frets": [3, 5], "root_frets": [3] },
+        { "string": 1, "frets": [3, 5], "root_frets": [] },
         { "string": 2, "frets": [3, 5], "root_frets": [] },
         { "string": 3, "frets": [2, 5], "root_frets": [5] },
         { "string": 4, "frets": [2, 5], "root_frets": [] },
         { "string": 5, "frets": [3, 5], "root_frets": [3] },
-        { "string": 6, "frets": [3, 5], "root_frets": [3] }
+        { "string": 6, "frets": [3, 5], "root_frets": [] }
       ]
     },
     "Pattern_5": {

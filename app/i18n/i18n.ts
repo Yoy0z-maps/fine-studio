@@ -3,6 +3,8 @@ import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
 import en from "@/app/i18n/locales/en.json";
+import es from "@/app/i18n/locales/es.json";
+import fr from "@/app/i18n/locales/fr.json";
 import ja from "@/app/i18n/locales/ja.json";
 import ko from "@/app/i18n/locales/ko.json";
 import zh from "@/app/i18n/locales/zh.json";
@@ -20,6 +22,12 @@ const resources = {
   },
   zh: {
     common: zh,
+  },
+  es: {
+    common: es,
+  },
+  fr: {
+    common: fr,
   },
 };
 
