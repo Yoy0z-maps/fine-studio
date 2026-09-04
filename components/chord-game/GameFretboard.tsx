@@ -11,9 +11,8 @@ const PADDING_LEFT = 24;
 const PADDING_RIGHT = 16;
 const FRETBOARD_WIDTH = SCREEN_WIDTH - 80;
 const SVG_WIDTH = FRETBOARD_WIDTH + PADDING_LEFT + PADDING_RIGHT;
-const FRET_COUNT = 5;
+const MIN_FRET_COUNT = 5;
 const STRING_COUNT = 6;
-const FRET_WIDTH = FRETBOARD_WIDTH / FRET_COUNT;
 const STRING_SPACING = 32;
 const FRET_NUMBER_HEIGHT = 24;
 const PADDING_TOP = FRET_NUMBER_HEIGHT;
@@ -41,8 +40,21 @@ export default function GameFretboard({
   const colors = useColors();
 
   const displayPosition = showAnswer && answerPosition ? answerPosition : position;
-  const baseFret = displayPosition?.baseFret || 1;
-  const displayFrets = interactive ? userFrets : displayPosition?.frets || [];
+
+  // 표시할 프렛 범위를 실제 코드 포지션에서 동적으로 계산한다 (baseFret 필드는
+  // 원본 데이터에 없어 항상 1이므로 신뢰하지 않는다). interactive 입력 단계에서는
+  // 정답(position=null)을 유추할 수 없도록 고정된 기본 범위(1~5)를 사용한다.
+  const playedFrets = (interactive ? [] : displayPosition?.frets || []).filter(
+    (f) => f > 0
+  );
+  const minFret = playedFrets.length > 0 ? Math.min(...playedFrets) : 1;
+  const maxFret = playedFrets.length > 0 ? Math.max(...playedFrets) : MIN_FRET_COUNT;
+
+  const baseFret = minFret > 4 ? minFret : 1;
+  const fretCount = Math.max(MIN_FRET_COUNT, maxFret - baseFret + 1);
+  const fretWidth = FRETBOARD_WIDTH / fretCount;
+
+  const toDisplayFret = (fret: number) => fret - baseFret + 1;
 
   // 지판 시작 Y 좌표
   const fretboardY = PADDING_TOP + 8;
@@ -51,9 +63,9 @@ export default function GameFretboard({
     <View style={styles.container}>
       <Svg width={SVG_WIDTH} height={SVG_HEIGHT}>
         {/* 프렛 번호 (지판 위) */}
-        {Array.from({ length: FRET_COUNT }).map((_, i) => {
+        {Array.from({ length: fretCount }).map((_, i) => {
           const fretNum = baseFret + i;
-          const x = PADDING_LEFT + (i + 0.5) * FRET_WIDTH;
+          const x = PADDING_LEFT + (i + 0.5) * fretWidth;
           return (
             <SvgText
               key={`fret-num-${i}`}
@@ -80,14 +92,14 @@ export default function GameFretboard({
         />
 
         {/* 프렛 라인 (세로) */}
-        {Array.from({ length: FRET_COUNT + 1 }).map((_, i) => {
+        {Array.from({ length: fretCount + 1 }).map((_, i) => {
           const isNut = i === 0 && baseFret === 1;
           return (
             <Line
               key={`fret-${i}`}
-              x1={PADDING_LEFT + i * FRET_WIDTH}
+              x1={PADDING_LEFT + i * fretWidth}
               y1={fretboardY}
-              x2={PADDING_LEFT + i * FRET_WIDTH}
+              x2={PADDING_LEFT + i * fretWidth}
               y2={fretboardY + FRETBOARD_CONTENT_HEIGHT}
               stroke={isNut ? "#D4A574" : "#A0A0A0"}
               strokeWidth={isNut ? 8 : 3}
@@ -97,8 +109,6 @@ export default function GameFretboard({
 
         {/* 줄 라인 - 위(i=0)=1번줄(얇음), 아래(i=5)=6번줄(두꺼움) */}
         {Array.from({ length: STRING_COUNT }).map((_, i) => {
-          // i=0 → 1번줄 (high E, 가장 얇음)
-          // i=5 → 6번줄 (low E, 가장 두꺼움)
           return (
             <Line
               key={`string-${i}`}
@@ -113,10 +123,10 @@ export default function GameFretboard({
         })}
 
         {/* 프렛 마커 */}
-        {[3, 5, 7, 9, 12].map((fretNum) => {
-          if (fretNum < baseFret || fretNum >= baseFret + FRET_COUNT) return null;
+        {[3, 5, 7, 9, 12, 15, 17, 21].map((fretNum) => {
+          if (fretNum < baseFret || fretNum >= baseFret + fretCount) return null;
           const fretPos = fretNum - baseFret + 1;
-          const x = PADDING_LEFT + (fretPos - 0.5) * FRET_WIDTH;
+          const x = PADDING_LEFT + (fretPos - 0.5) * fretWidth;
           const y = fretboardY + 8 + (STRING_SPACING * (STRING_COUNT - 1)) / 2;
 
           if (fretNum === 12) {
@@ -141,47 +151,50 @@ export default function GameFretboard({
         })}
 
         {/* 뮤트/오픈 표시 - stringIndex 0=6번줄(아래), 5=1번줄(위) */}
-        {displayFrets.map((fret, stringIndex) => {
-          const screenIndex = STRING_COUNT - 1 - stringIndex;
-          const y = fretboardY + 8 + screenIndex * STRING_SPACING;
+        {!interactive &&
+          displayPosition?.frets.map((fret, stringIndex) => {
+            const screenIndex = STRING_COUNT - 1 - stringIndex;
+            const y = fretboardY + 8 + screenIndex * STRING_SPACING;
 
-          if (fret === -1 && !interactive) {
-            return (
-              <SvgText
-                key={`mute-${stringIndex}`}
-                x={PADDING_LEFT - 14}
-                y={y + 5}
-                fill={colors.red || "#FF5252"}
-                fontSize={14}
-                fontWeight="bold"
-                textAnchor="middle"
-              >
-                X
-              </SvgText>
-            );
-          } else if (fret === 0) {
-            return (
-              <Circle
-                key={`open-${stringIndex}`}
-                cx={PADDING_LEFT - 14}
-                cy={y}
-                r={8}
-                fill="none"
-                stroke={colors.primary}
-                strokeWidth={2}
-              />
-            );
-          }
-          return null;
-        })}
+            if (fret === -1) {
+              return (
+                <SvgText
+                  key={`mute-${stringIndex}`}
+                  x={PADDING_LEFT - 14}
+                  y={y + 5}
+                  fill={colors.red || "#FF5252"}
+                  fontSize={14}
+                  fontWeight="bold"
+                  textAnchor="middle"
+                >
+                  X
+                </SvgText>
+              );
+            } else if (fret === 0) {
+              return (
+                <Circle
+                  key={`open-${stringIndex}`}
+                  cx={PADDING_LEFT - 14}
+                  cy={y}
+                  r={8}
+                  fill="none"
+                  stroke={colors.primary}
+                  strokeWidth={2}
+                />
+              );
+            }
+            return null;
+          })}
 
         {/* 손가락 위치 (뷰 모드) - stringIndex 0=6번줄(아래), 5=1번줄(위) */}
         {!interactive &&
-          displayFrets.map((fret, stringIndex) => {
+          displayPosition?.frets.map((fret, stringIndex) => {
             if (fret <= 0) return null;
+            const displayFret = toDisplayFret(fret);
+            if (displayFret < 1 || displayFret > fretCount) return null;
             const fingerNum = displayPosition?.fingers?.[stringIndex] || 0;
             const screenIndex = STRING_COUNT - 1 - stringIndex;
-            const x = PADDING_LEFT + (fret - 0.5) * FRET_WIDTH;
+            const x = PADDING_LEFT + (displayFret - 0.5) * fretWidth;
             const y = fretboardY + 8 + screenIndex * STRING_SPACING;
             return (
               <Circle
@@ -200,8 +213,10 @@ export default function GameFretboard({
         {interactive &&
           userFrets.map((fret, stringIndex) => {
             if (fret <= 0) return null;
+            const displayFret = toDisplayFret(fret);
+            if (displayFret < 1 || displayFret > fretCount) return null;
             const screenIndex = STRING_COUNT - 1 - stringIndex;
-            const x = PADDING_LEFT + (fret - 0.5) * FRET_WIDTH;
+            const x = PADDING_LEFT + (displayFret - 0.5) * fretWidth;
             const y = fretboardY + 8 + screenIndex * STRING_SPACING;
             return (
               <Circle
@@ -220,8 +235,10 @@ export default function GameFretboard({
         {showAnswer &&
           displayPosition?.frets.map((fret, stringIndex) => {
             if (fret <= 0) return null;
+            const displayFret = toDisplayFret(fret);
+            if (displayFret < 1 || displayFret > fretCount) return null;
             const screenIndex = STRING_COUNT - 1 - stringIndex;
-            const x = PADDING_LEFT + (fret - 0.5) * FRET_WIDTH;
+            const x = PADDING_LEFT + (displayFret - 0.5) * fretWidth;
             const y = fretboardY + 8 + screenIndex * STRING_SPACING;
             return (
               <Circle
@@ -239,7 +256,10 @@ export default function GameFretboard({
 
         {/* 바레 코드 */}
         {displayPosition?.barres?.map((barreFret, i) => {
-          const x = PADDING_LEFT + (barreFret - 0.5) * FRET_WIDTH;
+          const displayFret = toDisplayFret(barreFret);
+          if (displayFret < 1 || displayFret > fretCount) return null;
+          const x = PADDING_LEFT + (displayFret - 0.5) * fretWidth;
+
           const barreStrings = displayPosition.frets
             .map((f, idx) => (f === barreFret ? idx : -1))
             .filter((idx) => idx >= 0);
@@ -247,7 +267,6 @@ export default function GameFretboard({
 
           const firstString = Math.min(...barreStrings);
           const lastString = Math.max(...barreStrings);
-
           const topScreenIndex = STRING_COUNT - 1 - lastString;
           const bottomScreenIndex = STRING_COUNT - 1 - firstString;
           const topY = fretboardY + 8 + topScreenIndex * STRING_SPACING;
@@ -290,20 +309,23 @@ export default function GameFretboard({
                     O
                   </AppText>
                 </Pressable>
-                {/* 각 프렛 버튼 */}
-                {Array.from({ length: FRET_COUNT }).map((_, fretIndex) => (
-                  <Pressable
-                    key={fretIndex}
-                    style={[
-                      styles.touchBtn,
-                      { width: FRET_WIDTH - 4 },
-                      userFrets[stringIndex] === fretIndex + 1 && {
-                        backgroundColor: colors.primary + "40",
-                      },
-                    ]}
-                    onPress={() => onFretTouch(stringIndex, fretIndex + 1)}
-                  />
-                ))}
+                {/* 각 프렛 버튼 - baseFret부터 fretCount개, 항상 1~5(고정 기본 범위) */}
+                {Array.from({ length: fretCount }).map((_, fretIndex) => {
+                  const fret = baseFret + fretIndex;
+                  return (
+                    <Pressable
+                      key={fretIndex}
+                      style={[
+                        styles.touchBtn,
+                        { width: fretWidth - 4 },
+                        userFrets[stringIndex] === fret && {
+                          backgroundColor: colors.primary + "40",
+                        },
+                      ]}
+                      onPress={() => onFretTouch(stringIndex, fret)}
+                    />
+                  );
+                })}
               </View>
             );
           })}

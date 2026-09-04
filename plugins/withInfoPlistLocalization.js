@@ -20,6 +20,14 @@ const LOCALIZED_STRINGS = {
     NSMicrophoneUsageDescription: "调音器功能需要麦克风访问权限。",
     NSUserTrackingUsageDescription: "此应用使用跟踪功能来提供个性化广告并改善您的体验。",
   },
+  es: {
+    NSMicrophoneUsageDescription: "Se requiere acceso al micrófono para la función de afinador.",
+    NSUserTrackingUsageDescription: "Esta app utiliza el seguimiento para ofrecer anuncios personalizados y mejorar tu experiencia.",
+  },
+  fr: {
+    NSMicrophoneUsageDescription: "L'accès au microphone est requis pour la fonction d'accordeur.",
+    NSUserTrackingUsageDescription: "Cette application utilise le suivi pour proposer des publicités personnalisées et améliorer votre expérience.",
+  },
 };
 
 function withInfoPlistLocalization(config) {

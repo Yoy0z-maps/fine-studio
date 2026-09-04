@@ -62,7 +62,7 @@ export default function ChordsScreen() {
     for (const root of Object.keys(CHORD_FILES_MAP)) {
       for (const suffix of Object.keys(CHORD_FILES_MAP[root])) {
         const data = CHORD_FILES_MAP[root][suffix];
-        if (!data) continue;
+        if (!data?.positions?.length) continue;
 
         const displayName = `${data.key}${data.suffix || suffix}`;
 

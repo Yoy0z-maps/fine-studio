@@ -2,7 +2,7 @@ import i18n from "@/app/i18n/i18n";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const LANGUAGE_KEY = "app_language";
-type SupportedLanguage = "en" | "ko" | "ja" | "zh";
+type SupportedLanguage = "en" | "ko" | "ja" | "zh" | "es" | "fr";
 
 export const languageRepo = {
   async load() {

@@ -56,7 +56,14 @@ const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
   },
 };
 
-function getRandomChord(difficulty: Difficulty): GameQuestion | null {
+// GameFretboard's interactive touch grid can't adapt to the hidden answer's
+// fret range without leaking it, so it always offers this fixed window.
+const INTERACTIVE_FRET_COUNT = 5;
+
+function getRandomChord(
+  difficulty: Difficulty,
+  gameMode: GameMode
+): GameQuestion | null {
   const config = DIFFICULTY_CONFIG[difficulty];
   const availableChords: {
     root: string;
@@ -83,9 +90,25 @@ function getRandomChord(difficulty: Difficulty): GameQuestion | null {
       });
       if (!matchesDifficulty) continue;
 
-      const rawPosition = data.positions[0];
+      // "Play" mode requires the user to tap out the answer on a fixed 1-5
+      // fret grid, so only voicings that fit in it can ever be answered
+      // correctly. "Identify" mode just displays the chord (GameFretboard
+      // sizes itself to fit any position), so it isn't limited this way.
+      const rawPosition =
+        gameMode === "play"
+          ? data.positions.find((p: any) => {
+              const played = parseFrets(p.frets).filter((f: number) => f > 0);
+              return (
+                played.length === 0 ||
+                Math.max(...played) <= INTERACTIVE_FRET_COUNT
+              );
+            })
+          : data.positions[0];
+      if (!rawPosition) continue;
+
       const frets = parseFrets(rawPosition.frets);
-      const maxFret = Math.max(...frets.filter((f: number) => f > 0));
+      const playedFrets = frets.filter((f: number) => f > 0);
+      const maxFret = playedFrets.length > 0 ? Math.max(...playedFrets) : 0;
       if (maxFret > config.maxFret) continue;
 
       const allPositions: ChordPosition[] = data.positions.map((p: any) => ({
@@ -169,12 +192,12 @@ export function useChordGame(): UseChordGameReturn {
   const feedbackOpacity = useSharedValue(0);
 
   const nextQuestion = useCallback(() => {
-    const newQuestion = getRandomChord(difficulty);
+    const newQuestion = getRandomChord(difficulty, gameMode);
     setQuestion(newQuestion);
     setFeedback(null);
     setShowAnswer(false);
     setUserFrets([-1, -1, -1, -1, -1, -1]);
-  }, [difficulty]);
+  }, [difficulty, gameMode]);
 
   const startGame = useCallback(() => {
     setIsGameActive(true);
@@ -183,9 +206,9 @@ export function useChordGame(): UseChordGameReturn {
     setFeedback(null);
     setShowAnswer(false);
     setUserFrets([-1, -1, -1, -1, -1, -1]);
-    const newQuestion = getRandomChord(difficulty);
+    const newQuestion = getRandomChord(difficulty, gameMode);
     setQuestion(newQuestion);
-  }, [difficulty]);
+  }, [difficulty, gameMode]);
 
   const endGame = useCallback(() => {
     setIsGameActive(false);

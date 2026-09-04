@@ -2,7 +2,7 @@
   "expo": {
     "name": "fine-studio",
     "slug": "fine-studio",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -19,10 +19,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "2",
+      "buildNumber": "3",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "CFBundleLocalizations": ["en", "ko", "ja", "zh"],
+        "CFBundleLocalizations": ["en", "ko", "ja", "zh", "es", "fr"],
         "CFBundleDevelopmentRegion": "ko",
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -32,7 +32,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
-      "versionCode": 5,
+      "versionCode": 6,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": ["RECORD_AUDIO"],
@@ -67,8 +67,8 @@
         "expo-localization",
         {
           "supportedLocales": {
-            "ios": ["en", "ko", "ja", "zh"],
-            "android": ["en", "ko", "ja", "zh"]
+            "ios": ["en", "ko", "ja", "zh", "es", "fr"],
+            "android": ["en", "ko", "ja", "zh", "es", "fr"]
           }
         }
       ],
