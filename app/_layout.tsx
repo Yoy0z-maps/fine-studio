@@ -18,6 +18,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ThemeName } from "@/constants/themes";
 import { useEffect, useState } from "react";
 import { useTrackingPermission } from "@/hooks/useTrackingPermission";
+import mobileAds from "react-native-google-mobile-ads";
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -87,7 +88,13 @@ export default function RootLayout() {
   const [ready, setReady] = useState(false);
 
   // ATT(App Tracking Transparency) 권한 요청 - 앱 시작 시 자동으로 요청됨
-  useTrackingPermission();
+  const { isLoading: isTrackingLoading } = useTrackingPermission();
+
+  // ATT 응답이 확정된 후에 광고 SDK를 초기화 (Google 권장 순서)
+  useEffect(() => {
+    if (isTrackingLoading) return;
+    mobileAds().initialize();
+  }, [isTrackingLoading]);
 
   useEffect(() => {
     let cancelled = false;

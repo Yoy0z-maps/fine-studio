@@ -24,6 +24,8 @@ import Animated, {
   interpolateColor,
 } from "react-native-reanimated";
 import Svg, { Path, Circle, Line, Text as SvgText } from "react-native-svg";
+import { SafeAreaView } from "react-native-safe-area-context";
+import ScreenBannerAd from "@/components/ads/ScreenBannerAd";
 
 type Info = {
   sr?: number;
@@ -370,7 +372,12 @@ export default function TunerScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.background }]}
+      edges={["top"]}
+    >
+      <ScreenBannerAd screen="tuner" />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Mode Toggle */}
       <View style={[styles.modeToggle, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
@@ -582,11 +589,15 @@ export default function TunerScreen() {
           })}
         </View>
       )}
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     padding: 24,

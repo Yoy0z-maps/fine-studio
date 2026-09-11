@@ -20,6 +20,7 @@ import { useMetronomeStorage } from "@/hooks/useMetronomeStorage";
 import { useDeviceScale } from "@/hooks/useDeviceScale";
 import { DisplayMode, TimeSignature, Subdivision } from "@/utils/metronome/types";
 import { useColors } from "@/contexts/ThemeContext";
+import ScreenBannerAd from "@/components/ads/ScreenBannerAd";
 
 export default function MetronomeScreen() {
   const { t } = useTranslation("common");
@@ -129,6 +130,7 @@ export default function MetronomeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+      <ScreenBannerAd screen="metronome" />
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
