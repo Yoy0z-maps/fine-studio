@@ -1,9 +1,10 @@
 {
   "name": "expo-pcm-stream",
   "version": "0.1.0",
-  "description": "A native Expo module that detects the pitch of real-time microphone input natively (McLeod Pitch Method) and streams compact per-hop results to JavaScript, for low-latency tuning.",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "description": "Real-time microphone pitch detection for Expo and React Native: native capture and McLeod Pitch Method analysis, with compact per-hop results in JavaScript.",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "react-native": "src/index.ts",
   "scripts": {
     "build": "expo-module build",
     "clean": "expo-module clean",
@@ -18,8 +19,14 @@
   "keywords": [
     "react-native",
     "expo",
-    "expo-pcm-stream",
-    "ExpoPcmStream"
+    "expo-module",
+    "pitch-detection",
+    "pitch",
+    "tuner",
+    "microphone",
+    "audio",
+    "mpm",
+    "mcleod-pitch-method"
   ],
   "repository": "https://github.com/Yoy0z-maps/expo-pcm-stream",
   "bugs": {

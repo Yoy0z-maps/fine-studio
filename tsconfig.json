@@ -5,6 +5,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "expo-pcm-stream": [
+        "./expo-pcm-stream/src"
       ]
     }
   },
