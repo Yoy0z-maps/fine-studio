@@ -48,6 +48,9 @@ export default function MetronomePendulum({
 
     const beatDuration = 60000 / tempo;
     const targetAngle = direction.value * MAX_ANGLE;
+    // Glow on the side the pendulum swings toward. (Beat parity only agreed with the swing in
+    // even meters - in 3/4, 5/4, 7/8, 9/8 every other bar lit the opposite side.)
+    const glowRight = direction.value > 0;
 
     rotation.value = withTiming(targetAngle, {
       duration: beatDuration,
@@ -58,7 +61,7 @@ export default function MetronomePendulum({
     direction.value *= -1;
 
     // Glow effect
-    if (currentBeat % 2 === 0) {
+    if (glowRight) {
       rightGlow.value = withTiming(1, { duration: 50 }, () => {
         rightGlow.value = withTiming(0, { duration: 150 });
       });
