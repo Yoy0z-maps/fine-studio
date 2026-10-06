@@ -11,6 +11,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useState,
 } from "react";
 
@@ -40,11 +41,11 @@ export function AppThemeProvider({
     themeStorage.save(name);
   }, []);
 
-  const value: ThemeContextValue = {
-    themeName,
-    theme: themes[themeName],
-    setTheme,
-  };
+  // Memoized so a re-render of the provider doesn't re-render every useColors() consumer.
+  const value = useMemo<ThemeContextValue>(
+    () => ({ themeName, theme: themes[themeName], setTheme }),
+    [themeName, setTheme],
+  );
 
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
