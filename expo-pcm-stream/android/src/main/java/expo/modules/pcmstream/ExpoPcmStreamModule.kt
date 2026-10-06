@@ -1,174 +1,122 @@
 package expo.modules.pcmstream
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.util.Base64
+import android.media.AudioManager
 import androidx.core.content.ContextCompat
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import expo.modules.kotlin.records.Field
+import expo.modules.kotlin.records.Record
+import java.util.concurrent.atomic.AtomicReference
+
+class StartOptions : Record {
+  @Field
+  val windowSize: Int = 2048
+
+  @Field
+  val hopSize: Int = 1024
+
+  @Field
+  val minFrequency: Double = 65.0
+
+  @Field
+  val maxFrequency: Double = 1500.0
+
+  @Field
+  val silenceThreshold: Double = 0.002
+}
 
 class ExpoPcmStreamModule : Module() {
-    private val sampleRate = 44100
-    private var frameSize = 1024
-    private var audioRecord: AudioRecord? = null
-    private var recordingThread: Thread? = null
-    @Volatile
-    private var isRecording = false
+  private val lock = Any()
+  private val range = AtomicReference(FrequencyRange(65.0, 1500.0))
+  private var capture: PitchCapture? = null
 
-    override fun definition() = ModuleDefinition {
-        Name("ExpoPcmStream")
+  override fun definition() = ModuleDefinition {
+    Name("ExpoPcmStream")
 
-        Events("onAudioFrame", "onError")
+    Events(PITCH_EVENT, ERROR_EVENT)
 
-        Function("start") { fs: Int? ->
-            if (fs != null && fs > 0) {
-                frameSize = fs
-            }
-            startRecording()
-        }
-
-        Function("stop") {
-            stopRecording()
-        }
+    OnDestroy {
+      synchronized(lock) { stopCapture() }
     }
 
-    private fun startRecording() {
-        if (isRecording) {
-            return
-        }
+    AsyncFunction("start") { startOptions: StartOptions? ->
+      val options = startOptions ?: StartOptions()
+      if (!isValid(options)) {
+        throw CodedException("ERR_PITCH_STREAM_OPTIONS", "Invalid pitch stream options", null)
+      }
+      val context = appContext.reactContext
+        ?: throw CodedException("ERR_AUDIO_START", "React context is not available", null)
+      if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        throw CodedException("ERR_MIC_PERMISSION", "RECORD_AUDIO permission not granted", null)
+      }
+      val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        val context = appContext.reactContext ?: run {
-            sendEvent("onError", mapOf("message" to "Context not available"))
-            return
-        }
-
-        // Check permission
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED) {
-            sendEvent("onError", mapOf("message" to "RECORD_AUDIO permission not granted"))
-            return
-        }
-
-        val minBufferSize = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-
-        if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-            sendEvent("onError", mapOf("message" to "Unable to get min buffer size"))
-            return
-        }
-
-        val bufferSize = maxOf(minBufferSize, frameSize * 2 * 4) // frameSize * 2 bytes per sample * 4
-
+      synchronized(lock) {
+        stopCapture()
+        range.set(FrequencyRange(options.minFrequency, options.maxFrequency))
         try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                sampleRate,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize
-            )
-
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                sendEvent("onError", mapOf("message" to "AudioRecord initialization failed"))
-                audioRecord?.release()
-                audioRecord = null
-                return
-            }
-
-            audioRecord?.startRecording()
-            isRecording = true
-
-            recordingThread = Thread {
-                readAudioData()
-            }.apply {
-                priority = Thread.MAX_PRIORITY
-                start()
-            }
-        } catch (e: SecurityException) {
-            sendEvent("onError", mapOf("message" to "SecurityException: ${e.message}"))
-        } catch (e: Exception) {
-            sendEvent("onError", mapOf("message" to "Failed to start recording: ${e.message}"))
+          val newCapture = PitchCapture(
+            audioManager,
+            options.windowSize,
+            options.hopSize,
+            options.silenceThreshold,
+            range,
+            onResult = { result ->
+              sendEvent(
+                PITCH_EVENT,
+                mapOf(
+                  "frequency" to if (result.frequency.isNaN()) null else result.frequency,
+                  "clarity" to result.clarity,
+                  "rms" to result.rms,
+                ),
+              )
+            },
+            onError = { message ->
+              sendEvent(ERROR_EVENT, mapOf("code" to "ERR_AUDIO_CAPTURE", "message" to message))
+            },
+          )
+          newCapture.start()
+          capture = newCapture
+          mapOf("sampleRate" to newCapture.sampleRate.toDouble())
+        } catch (e: CaptureException) {
+          throw CodedException(e.code, e.message, e)
         }
+      }
     }
 
-    private fun readAudioData() {
-        val readBuffer = ShortArray(frameSize)
-
-        // Plain ShortArray ring buffer - the previous version used a mutableListOf<Short>
-        // (boxing every sample) and cleared each frame with `frameSize` calls to
-        // removeAt(0), each an O(n) shift. That made frame extraction O(frameSize^2) on
-        // this MAX_PRIORITY thread, which could fall behind AudioRecord's internal
-        // buffer and cause the dropped/glitched frames a tuner would perceive as lag.
-        val ringCapacity = frameSize * 4
-        val ring = ShortArray(ringCapacity)
-        var writeIndex = 0
-        var available = 0
-
-        val frame = ShortArray(frameSize)
-        val byteBuffer = ByteBuffer.allocate(frameSize * 2).order(ByteOrder.LITTLE_ENDIAN)
-
-        while (isRecording) {
-            val readCount = audioRecord?.read(readBuffer, 0, frameSize) ?: -1
-
-            if (readCount > 0) {
-                for (i in 0 until readCount) {
-                    ring[writeIndex] = readBuffer[i]
-                    writeIndex = (writeIndex + 1) % ringCapacity
-                }
-                available = minOf(ringCapacity, available + readCount)
-
-                while (available >= frameSize) {
-                    val start = (writeIndex - available + ringCapacity) % ringCapacity
-                    for (i in 0 until frameSize) {
-                        frame[i] = ring[(start + i) % ringCapacity]
-                    }
-                    available -= frameSize
-
-                    byteBuffer.clear()
-                    for (sample in frame) {
-                        byteBuffer.putShort(sample)
-                    }
-
-                    val base64Data = Base64.encodeToString(byteBuffer.array(), Base64.NO_WRAP)
-
-                    sendEvent("onAudioFrame", mapOf(
-                        "sampleRate" to sampleRate,
-                        "frameSize" to frameSize,
-                        "data" to base64Data
-                    ))
-                }
-            } else if (readCount < 0) {
-                sendEvent("onError", mapOf("message" to "AudioRecord read error: $readCount"))
-                break
-            }
-        }
+    AsyncFunction("stop") {
+      synchronized(lock) { stopCapture() }
     }
 
-    private fun stopRecording() {
-        isRecording = false
-
-        recordingThread?.interrupt()
-        recordingThread = null
-
-        try {
-            audioRecord?.stop()
-        } catch (e: Exception) {
-            // Ignore
-        }
-
-        try {
-            audioRecord?.release()
-        } catch (e: Exception) {
-            // Ignore
-        }
-        audioRecord = null
+    // Lets JS switch tuner modes without restarting the recorder.
+    Function("setFrequencyRange") { minFrequency: Double, maxFrequency: Double ->
+      if (!(minFrequency > 0 && maxFrequency > minFrequency)) {
+        throw CodedException("ERR_PITCH_STREAM_OPTIONS", "Invalid frequency range", null)
+      }
+      range.set(FrequencyRange(minFrequency, maxFrequency))
     }
+  }
+
+  private fun stopCapture() {
+    capture?.stop()
+    capture = null
+  }
+
+  private fun isValid(options: StartOptions): Boolean {
+    return options.windowSize in 256..16384 &&
+      options.hopSize in 1..options.windowSize &&
+      options.minFrequency > 0 &&
+      options.maxFrequency > options.minFrequency &&
+      options.silenceThreshold >= 0
+  }
+
+  private companion object {
+    // Distinct from the generic "onError" so the events can't collide with other modules'.
+    const val PITCH_EVENT = "onPitch"
+    const val ERROR_EVENT = "onPitchStreamError"
+  }
 }

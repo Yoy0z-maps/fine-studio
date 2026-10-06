@@ -1,15 +1,31 @@
 import { registerWebModule, NativeModule } from 'expo';
 
-import { ExpoPcmStreamModuleEvents } from './ExpoPcmStream.types';
+import { ExpoPcmStreamModuleEvents, PermissionStatus, PitchStreamOptions } from './ExpoPcmStream.types';
 
 class ExpoPcmStreamModule extends NativeModule<ExpoPcmStreamModuleEvents> {
-  start(_frameSize?: number): void {
+  async start(_options?: PitchStreamOptions): Promise<{ sampleRate: number } | null> {
     // Web implementation not supported
-    this.emit('onError', { message: 'PCM streaming not supported on web' });
+    this.emit('onPitchStreamError', {
+      code: 'ERR_UNSUPPORTED_PLATFORM',
+      message: 'Pitch streaming is not supported on web',
+    });
+    return null;
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     // No-op on web
+  }
+
+  setFrequencyRange(_minFrequency: number, _maxFrequency: number): void {
+    // No-op on web
+  }
+
+  async getPermissionStatus(): Promise<PermissionStatus> {
+    return 'denied';
+  }
+
+  async requestPermission(): Promise<PermissionStatus> {
+    return 'denied';
   }
 }
 

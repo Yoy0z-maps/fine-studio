@@ -6,16 +6,11 @@ import {
   nearestChromaticTarget,
   nearestGuitarTarget,
 } from "@/utils/audio/guitar";
-import {
-  base64ToFloat32,
-  onAudioFrame,
-  startPcm,
-  stopPcm,
-} from "@/utils/audio/pcm";
-import { detectPitch, PitchTracker } from "@/utils/audio/pitch";
+import { PitchTracker } from "@/utils/audio/pitch";
 import { useFocusEffect } from "@react-navigation/native";
+import ExpoPcmStream, { type PitchEvent } from "expo-pcm-stream";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { StyleSheet, TouchableOpacity, View, Dimensions, Platform } from "react-native";
+import { AppState, StyleSheet, TouchableOpacity, View, Dimensions, Platform } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -28,8 +23,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenBannerAd from "@/components/ads/ScreenBannerAd";
 
 type Info = {
-  sr?: number;
-  rms?: number;
   hz?: number;
   note?: string;
   octave?: number;
@@ -38,7 +31,7 @@ type Info = {
   guitarString?: number;
 };
 
-// ===== DSP params =====
+// ===== DSP params (detection itself runs natively in expo-pcm-stream) =====
 const HOP = 1024;
 const WINDOW = 2048;
 const MAX_CENTS_UI = 50;
@@ -64,11 +57,60 @@ const BASE_GAUGE_SIZE = Math.min(SCREEN_WIDTH - 48, 320);
 // 기타 줄 이름
 const GUITAR_STRINGS = ["E", "A", "D", "G", "B", "E"];
 
+const frequencyRange = (standardMode: boolean) =>
+  standardMode
+    ? { minFrequency: STANDARD_MIN_FREQ, maxFrequency: STANDARD_MAX_FREQ }
+    : { minFrequency: CHROMATIC_MIN_FREQ, maxFrequency: CHROMATIC_MAX_FREQ };
+
+// What the screen shows: Hz to 0.1, cents to whole numbers. Comparing these (rather than the raw
+// readings) lets a held note or silence skip re-rendering entirely.
+const toDisplayInfo = (info: Info): Info => ({
+  hz: info.hz != null ? Math.round(info.hz * 10) / 10 : undefined,
+  note: info.note,
+  octave: info.octave,
+  cents: info.cents != null ? Math.round(info.cents) : undefined,
+  locked: info.locked ?? false,
+  guitarString: info.guitarString,
+});
+
+const sameDisplayInfo = (a: Info, b: Info) =>
+  a.hz === b.hz &&
+  a.note === b.note &&
+  a.octave === b.octave &&
+  a.cents === b.cents &&
+  a.locked === b.locked &&
+  a.guitarString === b.guitarString;
+
+const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
+  const rad = ((angle - 90) * Math.PI) / 180;
+  return {
+    x: cx + r * Math.cos(rad),
+    y: cy + r * Math.sin(rad),
+  };
+};
+
+// Generate arc path for gauge
+const createArcPath = (
+  gaugeSize: number,
+  startAngle: number,
+  endAngle: number,
+  radius: number
+) => {
+  const cx = gaugeSize / 2;
+  const cy = gaugeSize / 2;
+  const start = polarToCartesian(cx, cy, radius, endAngle);
+  const end = polarToCartesian(cx, cy, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
+};
+
 export default function TunerScreen() {
   const colors = useColors();
   const { scale, isTablet } = useDeviceScale();
-  const { isGranted, isDenied, isLoading, requestPermission } =
+  const { status, isLoading, isBlocked, checkPermission, requestPermission, openSettings } =
     useMicrophonePermission();
+  // iOS asks for the permission itself when the stream starts; Android needs it granted first.
+  const needsPermission = Platform.OS === "android" ? status !== "granted" : isBlocked;
 
   // 스케일된 사이즈
   const sizes = useMemo(() => {
@@ -92,8 +134,6 @@ export default function TunerScreen() {
   const lockedProgress = useSharedValue(0);
 
   // ===== DSP refs =====
-  const ringRef = useRef<Float32Array>(new Float32Array(WINDOW));
-  const filledRef = useRef(0);
   const pitchTrackerRef = useRef(new PitchTracker());
   const targetRef = useRef<{
     name: string;
@@ -107,6 +147,8 @@ export default function TunerScreen() {
   // ===== Performance refs =====
   const lastUiUpdateRef = useRef(0);
   const pendingInfoRef = useRef<Info>({});
+  const shownInfoRef = useRef<Info>({});
+  const needleCentsRef = useRef(0);
 
   const [info, setInfo] = useState<Info>({});
   const [isStandardMode, setIsStandardMode] = useState(true);
@@ -114,6 +156,9 @@ export default function TunerScreen() {
 
   useEffect(() => {
     modeRef.current = isStandardMode;
+    // Switches the native detection range in place - no audio restart.
+    const { minFrequency, maxFrequency } = frequencyRange(isStandardMode);
+    ExpoPcmStream.setFrequencyRange(minFrequency, maxFrequency);
     targetRef.current = null;
     silentSinceRef.current = null;
     lockSinceRef.current = null;
@@ -121,19 +166,8 @@ export default function TunerScreen() {
     pitchTrackerRef.current.reset();
   }, [isStandardMode]);
 
-  // Update animations when info changes
+  // Locked state animation (the needle is driven directly from the pitch events)
   useEffect(() => {
-    const centsForUi = info.cents ?? 0;
-    const clamped = Math.max(-MAX_CENTS_UI, Math.min(MAX_CENTS_UI, centsForUi));
-    const normalized = clamped / MAX_CENTS_UI;
-
-    // Needle rotation: -90 to +90 degrees
-    needleRotation.value = withSpring(normalized * 45, {
-      damping: 15,
-      stiffness: 100,
-    });
-
-    // Locked state animation
     if (info.locked) {
       lockedProgress.value = withTiming(1, { duration: 200 });
       noteScale.value = withSpring(1.1, { damping: 10 });
@@ -141,46 +175,51 @@ export default function TunerScreen() {
       lockedProgress.value = withTiming(0, { duration: 200 });
       noteScale.value = withSpring(1, { damping: 10 });
     }
-  }, [info.cents, info.locked]);
+  }, [info.locked]);
 
   useFocusEffect(
     useCallback(() => {
-      // Android에서 권한이 없으면 시작하지 않음
-      if (Platform.OS === "android" && !isGranted) {
+      // Android에서 권한이 없으면 시작하지 않음 (iOS는 시작 시 네이티브가 직접 요청)
+      if (needsPermission) {
         return;
       }
 
-      const pushHop = (hop: Float32Array) => {
-        ringRef.current.copyWithin(0, HOP);
-        ringRef.current.set(hop, WINDOW - HOP);
-        filledRef.current = Math.min(WINDOW, filledRef.current + HOP);
+      const setNeedle = (cents: number) => {
+        const clamped = Math.max(-MAX_CENTS_UI, Math.min(MAX_CENTS_UI, cents));
+        if (Math.abs(clamped - needleCentsRef.current) < 0.05) return;
+        needleCentsRef.current = clamped;
+        // Needle rotation: -45 to +45 degrees, animated on the UI thread
+        needleRotation.value = withSpring((clamped / MAX_CENTS_UI) * 45, {
+          damping: 15,
+          stiffness: 100,
+        });
       };
 
       const maybeUpdateUi = (now: number) => {
-        if (now - lastUiUpdateRef.current >= UI_INTERVAL) {
-          lastUiUpdateRef.current = now;
-          setInfo({ ...pendingInfoRef.current });
+        if (now - lastUiUpdateRef.current < UI_INTERVAL) return;
+        lastUiUpdateRef.current = now;
+        setNeedle(pendingInfoRef.current.cents ?? 0);
+        const next = toDisplayInfo(pendingInfoRef.current);
+        if (!sameDisplayInfo(next, shownInfoRef.current)) {
+          shownInfoRef.current = next;
+          setInfo(next);
         }
       };
 
-      const processAudio = (hopFrame: Float32Array, sampleRate: number) => {
-        let sum = 0;
-        for (let i = 0; i < hopFrame.length; i++) {
-          sum += hopFrame[i] * hopFrame[i];
-        }
-        const rms = Math.sqrt(sum / hopFrame.length);
-        const now = Date.now();
+      const resetDetection = () => {
+        pitchTrackerRef.current.reset();
+        targetRef.current = null;
+        silentSinceRef.current = null;
+        lockSinceRef.current = null;
+        lastNoteRef.current = null;
+        pendingInfoRef.current = {};
+        shownInfoRef.current = {};
+        setInfo({});
+        setNeedle(0);
+      };
 
-        if (filledRef.current < WINDOW) {
-          pendingInfoRef.current = {
-            ...pendingInfoRef.current,
-            sr: sampleRate,
-            rms,
-            locked: false,
-          };
-          maybeUpdateUi(now);
-          return;
-        }
+      const processPitch = ({ frequency, clarity, rms }: PitchEvent) => {
+        const now = Date.now();
 
         if (rms < GATE) {
           if (silentSinceRef.current === null) {
@@ -190,24 +229,13 @@ export default function TunerScreen() {
           const silentDuration = now - silentSinceRef.current;
 
           if (silentDuration >= FADE_OUT_MS) {
-            pendingInfoRef.current = {
-              sr: sampleRate,
-              rms,
-              hz: undefined,
-              note: undefined,
-              octave: undefined,
-              cents: undefined,
-              locked: false,
-              guitarString: undefined,
-            };
+            pendingInfoRef.current = {};
             pitchTrackerRef.current.reset();
             targetRef.current = null;
             lockSinceRef.current = null;
           } else {
             pendingInfoRef.current = {
               ...pendingInfoRef.current,
-              sr: sampleRate,
-              rms,
               locked: false,
             };
           }
@@ -217,11 +245,7 @@ export default function TunerScreen() {
 
         silentSinceRef.current = null;
 
-        const [minFreq, maxFreq] = modeRef.current
-          ? [STANDARD_MIN_FREQ, STANDARD_MAX_FREQ]
-          : [CHROMATIC_MIN_FREQ, CHROMATIC_MAX_FREQ];
-        const detected = detectPitch(ringRef.current, sampleRate, minFreq, maxFreq);
-        const smoothedHz = pitchTrackerRef.current.update(detected);
+        const smoothedHz = pitchTrackerRef.current.update(frequency);
         if (!smoothedHz) return;
 
         let noteName: string;
@@ -263,9 +287,9 @@ export default function TunerScreen() {
         }
 
         // Only a fresh, confident detection may advance or reset the lock timer - a
-        // single transient miss (detected == null, still showing the held smoothedHz)
+        // single transient miss (frequency == null, still showing the held smoothedHz)
         // just holds whatever lock state was already in progress instead of flickering.
-        if (detected && detected.clarity >= LOCK_MIN_CLARITY) {
+        if (frequency != null && clarity >= LOCK_MIN_CLARITY) {
           const inTune = Math.abs(cents) <= LOCK_CENTS;
           if (inTune) {
             if (lastNoteRef.current !== noteName) {
@@ -283,8 +307,6 @@ export default function TunerScreen() {
         const locked =
           lockSinceRef.current != null && now - lockSinceRef.current >= LOCK_MS;
         pendingInfoRef.current = {
-          sr: sampleRate,
-          rms,
           hz: smoothedHz,
           note: noteName,
           octave,
@@ -295,23 +317,53 @@ export default function TunerScreen() {
         maybeUpdateUi(now);
       };
 
-      const sub = onAudioFrame(({ sampleRate, data }: any) => {
-        const hopFrame = base64ToFloat32(data);
-        if (hopFrame.length !== HOP) return;
-
-        pushHop(hopFrame);
-        processAudio(hopFrame, sampleRate);
+      const pitchSub = ExpoPcmStream.addListener("onPitch", processPitch);
+      const errorSub = ExpoPcmStream.addListener("onPitchStreamError", (error) => {
+        console.warn("Tuner audio stopped:", error.message);
       });
 
-      startPcm(HOP);
+      let running = false;
+      const start = () => {
+        if (running) return;
+        running = true;
+        ExpoPcmStream.start({
+          windowSize: WINDOW,
+          hopSize: HOP,
+          silenceThreshold: GATE,
+          ...frequencyRange(modeRef.current),
+        }).catch((error) => {
+          running = false;
+          if (error?.code === "ERR_MIC_PERMISSION") {
+            checkPermission(); // shows the permission screen once it reports "blocked"
+          } else {
+            console.warn("Failed to start the tuner:", error);
+          }
+        });
+      };
+      const stop = () => {
+        if (!running) return;
+        running = false;
+        ExpoPcmStream.stop().catch(() => {});
+        resetDetection();
+      };
+
+      if (AppState.currentState !== "background") {
+        start();
+      }
+      // Release the mic while the app is in the background: iOS would suspend it anyway, and
+      // Android would keep recording (silence) and analyzing it, draining the battery.
+      const appStateSub = AppState.addEventListener("change", (state) => {
+        if (state === "active") start();
+        else if (state === "background") stop();
+      });
 
       return () => {
-        sub.remove();
-        stopPcm();
-        pitchTrackerRef.current.reset();
-        silentSinceRef.current = null;
+        appStateSub.remove();
+        pitchSub.remove();
+        errorSub.remove();
+        stop();
       };
-    }, [isGranted]),
+    }, [needsPermission, checkPermission, needleRotation]),
   );
 
   const noteAnimatedStyle = useAnimatedStyle(() => ({
@@ -322,13 +374,52 @@ export default function TunerScreen() {
     transform: [{ rotate: `${needleRotation.value}deg` }],
   }));
 
+  // Static part of the gauge, so pitch updates only re-render what actually changes.
+  const gaugeBackground = useMemo(
+    () => (
+      <>
+        {/* Background arc */}
+        <Path
+          d={createArcPath(sizes.gaugeSize, -90, 90, sizes.gaugeRadius)}
+          stroke={colors.surface}
+          strokeWidth={8 * scale}
+          fill="none"
+          strokeLinecap="round"
+        />
+
+        {/* Tick marks */}
+        {[-45, -30, -15, 0, 15, 30, 45].map((angle, i) => {
+          const isMajor = angle === 0;
+          const innerR = sizes.gaugeRadius - (isMajor ? 20 * scale : 12 * scale);
+          const outerR = sizes.gaugeRadius - 4 * scale;
+          const cx = sizes.gaugeSize / 2;
+          const cy = sizes.gaugeSize / 2;
+          const start = polarToCartesian(cx, cy, innerR, angle);
+          const end = polarToCartesian(cx, cy, outerR, angle);
+          return (
+            <Line
+              key={i}
+              x1={start.x}
+              y1={start.y}
+              x2={end.x}
+              y2={end.y}
+              stroke={angle === 0 ? colors.primary : colors.textSecondary}
+              strokeWidth={isMajor ? 3 * scale : 2 * scale}
+            />
+          );
+        })}
+      </>
+    ),
+    [sizes, scale, colors.surface, colors.primary, colors.textSecondary]
+  );
+
   const gaugeColor = info.locked ? colors.primary : "#fff";
   const centsValue = info.cents ?? 0;
   const isFlat = centsValue < -2;
   const isSharp = centsValue > 2;
 
-  // Android에서 권한이 필요한 경우 권한 요청 화면 표시
-  if (Platform.OS === "android" && !isLoading && !isGranted) {
+  // 권한이 필요한 경우 권한 요청 화면 표시 (iOS는 한 번 거부하면 설정 앱에서만 허용 가능)
+  if (!isLoading && needsPermission) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.permissionContainer}>
@@ -342,34 +433,16 @@ export default function TunerScreen() {
           </AppText>
           <TouchableOpacity
             style={[styles.permissionButton, { backgroundColor: colors.primary }]}
-            onPress={requestPermission}
+            onPress={isBlocked ? openSettings : requestPermission}
           >
             <AppText style={styles.permissionButtonText}>
-              {isDenied ? "설정에서 권한 허용" : "권한 허용하기"}
+              {isBlocked ? "설정에서 권한 허용" : "권한 허용하기"}
             </AppText>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
-
-  // Generate arc path for gauge
-  const createArcPath = (startAngle: number, endAngle: number, radius: number) => {
-    const cx = sizes.gaugeSize / 2;
-    const cy = sizes.gaugeSize / 2;
-    const start = polarToCartesian(cx, cy, radius, endAngle);
-    const end = polarToCartesian(cx, cy, radius, startAngle);
-    const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-  };
-
-  const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
-    const rad = ((angle - 90) * Math.PI) / 180;
-    return {
-      x: cx + r * Math.cos(rad),
-      y: cy + r * Math.sin(rad),
-    };
-  };
 
   return (
     <SafeAreaView
@@ -417,36 +490,7 @@ export default function TunerScreen() {
       {/* Semicircular Gauge */}
       <View style={[styles.gaugeContainer, { width: sizes.gaugeSize, height: sizes.gaugeSize / 2 + 60 }]}>
         <Svg width={sizes.gaugeSize} height={sizes.gaugeSize / 2 + 40}>
-          {/* Background arc */}
-          <Path
-            d={createArcPath(-90, 90, sizes.gaugeRadius)}
-            stroke={colors.surface}
-            strokeWidth={8 * scale}
-            fill="none"
-            strokeLinecap="round"
-          />
-
-          {/* Tick marks */}
-          {[-45, -30, -15, 0, 15, 30, 45].map((angle, i) => {
-            const isMajor = angle === 0;
-            const innerR = sizes.gaugeRadius - (isMajor ? 20 * scale : 12 * scale);
-            const outerR = sizes.gaugeRadius - 4 * scale;
-            const cx = sizes.gaugeSize / 2;
-            const cy = sizes.gaugeSize / 2;
-            const start = polarToCartesian(cx, cy, innerR, angle);
-            const end = polarToCartesian(cx, cy, outerR, angle);
-            return (
-              <Line
-                key={i}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                stroke={angle === 0 ? colors.primary : colors.textSecondary}
-                strokeWidth={isMajor ? 3 * scale : 2 * scale}
-              />
-            );
-          })}
+          {gaugeBackground}
 
           {/* Labels */}
           <SvgText

@@ -64,7 +64,7 @@ fine-studio/
 ├── expo-metronome/               # 메트로놈 네이티브 모듈
 │   ├── ios/                      # Swift 구현
 │   └── android/                  # Kotlin 구현
-└── expo-pcm-stream/              # PCM 오디오 스트림 모듈
+└── expo-pcm-stream/              # 마이크 캡처 + 네이티브 피치 감지 모듈 (튜너)
     ├── ios/                      # Swift 구현
     └── android/                  # Kotlin 구현
 ```
@@ -154,28 +154,42 @@ ExpoMetronome.addListener('onBeat', ({ beat, isAccent, tempo, subBeat }) => {});
 
 ### expo-pcm-stream
 
-마이크 PCM 오디오 스트림 모듈 (튜너용).
+마이크 캡처와 피치 감지를 모두 네이티브에서 처리하고, 홉(기본 1024샘플)마다 결과만 JS로 보내는 튜너용 모듈.
 
 **기술 구현:**
-- iOS: AVAudioEngine InputNode Tap
-- Android: AudioRecord (44100Hz, Mono, 16bit)
+- 피치 감지: McLeod Pitch Method(MPM), FFT 기반 자기상관(iOS는 Accelerate/vDSP, Android는 자체 실수 FFT). 35Hz 하이패스 필터를 스트림 전체에 연속 적용
+- iOS: AVAudioEngine + AVAudioSinkNode(실시간 스레드는 링버퍼 복사만, 분석은 전용 스레드). 세션은 `.playAndRecord`/`.measurement`, 정지 시 원래 세션으로 복원. 인터럽션·라우트 변경 시 자동 재시작
+- Android: AudioRecord(VOICE_RECOGNITION 소스 — AGC/노이즈 억제 꺼짐, 기기 기본 샘플레이트), URGENT_AUDIO 우선순위 스레드
 
 **API:**
 ```typescript
 import ExpoPcmStream from 'expo-pcm-stream';
 
-// 시작
-ExpoPcmStream.start(frameSize?: number);  // 기본값 1024
-
-// 정지
-ExpoPcmStream.stop();
-
-// 이벤트
-ExpoPcmStream.addListener('onAudioFrame', ({ sampleRate, frameSize, data }) => {
-  // data: Base64 인코딩된 Int16 PCM 데이터
+// 시작 (iOS는 권한이 미결정이면 여기서 요청, 거부 시 ERR_MIC_PERMISSION으로 reject)
+await ExpoPcmStream.start({
+  windowSize: 2048,        // 분석 윈도우
+  hopSize: 1024,           // 이벤트 간격
+  minFrequency: 65,
+  maxFrequency: 1500,
+  silenceThreshold: 0.002, // 이보다 조용한 홉은 감지 생략
 });
 
-ExpoPcmStream.addListener('onError', ({ message }) => {});
+// 재시작 없이 감지 범위 변경 (튜너 모드 전환)
+ExpoPcmStream.setFrequencyRange(70, 400);
+
+// 정지
+await ExpoPcmStream.stop();
+
+// 이벤트 (홉마다)
+ExpoPcmStream.addListener('onPitch', ({ frequency, clarity, rms }) => {
+  // frequency: Hz 또는 null(무음/주기성 부족), clarity: 0..1 신뢰도, rms: 레벨
+});
+
+ExpoPcmStream.addListener('onPitchStreamError', ({ code, message }) => {});
+
+// iOS 전용 권한 API (Android는 PermissionsAndroid 사용)
+await ExpoPcmStream.getPermissionStatus(); // 'granted' | 'denied' | 'undetermined'
+await ExpoPcmStream.requestPermission();
 ```
 
 ---

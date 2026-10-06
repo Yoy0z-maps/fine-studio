@@ -1,9 +1,9 @@
 {
   "name": "expo-pcm-stream",
   "version": "0.1.0",
-  "description": "A native Expo module that streams real-time microphone input as fixed-size 16-bit PCM frames to JavaScript, optimized for low-latency audio analysis such as pitch detection and tuning.",
-  "main": "build/index.js",
-  "types": "build/index.d.ts",
+  "description": "A native Expo module that detects the pitch of real-time microphone input natively (McLeod Pitch Method) and streams compact per-hop results to JavaScript, for low-latency tuning.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "scripts": {
     "build": "expo-module build",
     "clean": "expo-module clean",
