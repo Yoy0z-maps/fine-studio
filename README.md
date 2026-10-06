@@ -128,8 +128,10 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_web_client_id.apps.googleusercontent.com
 정밀한 타이밍의 메트로놈 모듈.
 
 **기술 구현:**
-- iOS: AVAudioEngine + DispatchSourceTimer
-- Android: AudioTrack (MODE_STATIC) + HandlerThread
+- 공통: 오디오 스트림 위에서 클릭 위치를 샘플 단위로 계산해 직접 합성하는 시퀀서(누적 드리프트 없음, 템포/서브디비전 변경 시 박 격자 유지)
+- iOS: AVAudioEngine + AVAudioSourceNode (재생할 때만 엔진 동작, 인터럽션·라우트 변경 시 자동 재개)
+- Android: 스트리밍 AudioTrack (기기 기본 샘플레이트, 저지연 모드) + URGENT_AUDIO 쓰기 스레드
+- `onBeat` 이벤트는 해당 클릭이 실제로 들리는 시각에 맞춰 전달
 
 **API:**
 ```typescript
