@@ -162,13 +162,17 @@ export const userService = {
    */
   async updateSettings(
     uid: string,
-    settings: Partial<UserProfile["settings"]>
+    settings: Partial<NonNullable<UserProfile["settings"]>>
   ): Promise<void> {
     try {
       const userRef = doc(db, USERS_COLLECTION, uid);
-      await updateDoc(userRef, {
-        [`settings.${Object.keys(settings)[0]}`]: Object.values(settings)[0],
-      });
+      // Dotted paths update just these fields; previously only the first key was written.
+      await updateDoc(
+        userRef,
+        Object.fromEntries(
+          Object.entries(settings).map(([key, value]) => [`settings.${key}`, value])
+        )
+      );
     } catch (error) {
       console.error("Failed to update settings:", error);
     }

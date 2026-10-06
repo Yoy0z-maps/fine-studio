@@ -29,7 +29,7 @@ export function useTapTempo(options?: UseTapTempoOptions): UseTapTempoReturn {
   const [isActive, setIsActive] = useState(false);
 
   const tapTimesRef = useRef<number[]>([]);
-  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const calculateTempo = useCallback((times: number[]): number | null => {
     if (times.length < 2) return null;

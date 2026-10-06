@@ -34,7 +34,7 @@ export default function LoginScreen() {
 
   // 테스트 모드: 로고 5번 클릭
   const tapCountRef = useRef(0);
-  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleLogoTap = () => {
     tapCountRef.current += 1;

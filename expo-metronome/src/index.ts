@@ -1,7 +1,4 @@
-import { requireNativeModule, EventEmitter, Subscription } from 'expo-modules-core';
-
-const ExpoMetronome = requireNativeModule('ExpoMetronome');
-const emitter = new EventEmitter(ExpoMetronome);
+import { requireNativeModule, NativeModule, type EventSubscription } from 'expo-modules-core';
 
 export interface BeatEvent {
   beat: number;
@@ -9,6 +6,24 @@ export interface BeatEvent {
   tempo: number;
   subBeat?: number;
 }
+
+type ExpoMetronomeEvents = {
+  onBeat: (event: BeatEvent) => void;
+};
+
+declare class ExpoMetronomeModule extends NativeModule<ExpoMetronomeEvents> {
+  start(bpm: number, beats: number, soundEnabled: boolean, accentEnabled: boolean): void;
+  stop(): void;
+  setTempo(bpm: number): void;
+  setBeats(beats: number): void;
+  setSubdivision?(sub: number): void;
+  setSoundEnabled(enabled: boolean): void;
+  setAccentEnabled(enabled: boolean): void;
+  isPlaying(): boolean;
+}
+
+// Native modules are event emitters themselves (SDK 52+).
+const ExpoMetronome = requireNativeModule<ExpoMetronomeModule>('ExpoMetronome');
 
 export const isAvailable = true;
 
@@ -34,9 +49,7 @@ export function setBeats(beats: number): void {
 }
 
 export function setSubdivision(sub: number): void {
-  if (typeof ExpoMetronome.setSubdivision === 'function') {
-    ExpoMetronome.setSubdivision(sub);
-  }
+  ExpoMetronome.setSubdivision?.(sub);
 }
 
 export function setSoundEnabled(enabled: boolean): void {
@@ -51,6 +64,6 @@ export function isPlaying(): boolean {
   return ExpoMetronome.isPlaying();
 }
 
-export function onBeat(callback: (event: BeatEvent) => void): Subscription {
-  return emitter.addListener('onBeat', callback);
+export function onBeat(callback: (event: BeatEvent) => void): EventSubscription {
+  return ExpoMetronome.addListener('onBeat', callback);
 }
