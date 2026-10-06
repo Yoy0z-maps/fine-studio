@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
 import { getBannerAdUnitId, BannerAdScreen } from "@/utils/ads/adUnitIds";
@@ -7,7 +7,7 @@ type Props = {
   screen: BannerAdScreen;
 };
 
-export default function ScreenBannerAd({ screen }: Props) {
+function ScreenBannerAd({ screen }: Props) {
   const unitId = getBannerAdUnitId(screen);
   const [failed, setFailed] = useState(false);
 
@@ -30,3 +30,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 });
+
+export default memo(ScreenBannerAd);

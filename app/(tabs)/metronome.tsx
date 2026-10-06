@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, TouchableOpacity, View, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,9 +18,16 @@ import { useMetronome } from "@/hooks/useMetronome";
 import { useTapTempo } from "@/hooks/useTapTempo";
 import { useMetronomeStorage } from "@/hooks/useMetronomeStorage";
 import { useDeviceScale } from "@/hooks/useDeviceScale";
-import { DisplayMode, TimeSignature, Subdivision } from "@/utils/metronome/types";
+import {
+  DisplayMode,
+  MetronomeSettings,
+  TimeSignature,
+  Subdivision,
+} from "@/utils/metronome/types";
 import { useColors } from "@/contexts/ThemeContext";
 import ScreenBannerAd from "@/components/ads/ScreenBannerAd";
+
+const SETTINGS_SAVE_DELAY_MS = 300;
 
 export default function MetronomeScreen() {
   const { t } = useTranslation("common");
@@ -45,18 +52,31 @@ export default function MetronomeScreen() {
     onTempoDetected: metronome.setTempo,
   });
 
+  // Saves are debounced: dragging the tempo slider changes the tempo many times a second, and
+  // each save is a storage write plus another render. Debouncing also drops the stale save of
+  // the defaults this effect makes the moment loading finishes, before the stored settings
+  // are applied below. Whatever is still pending is flushed on unmount.
+  const saveSettingsRef = useRef(storage.saveSettings);
+  saveSettingsRef.current = storage.saveSettings;
+  const pendingSaveRef = useRef<Partial<MetronomeSettings> | null>(null);
+
   useEffect(() => {
-    if (!storage.isLoading) {
-      storage.saveSettings({
-        tempo: metronome.tempo,
-        timeSignature: metronome.timeSignature,
-        subdivision: metronome.subdivision,
-        soundEnabled: metronome.soundEnabled,
-        hapticEnabled: metronome.hapticEnabled,
-        accentFirstBeat: metronome.accentFirstBeat,
-        displayMode,
-      });
-    }
+    if (storage.isLoading) return;
+    const settings: Partial<MetronomeSettings> = {
+      tempo: metronome.tempo,
+      timeSignature: metronome.timeSignature,
+      subdivision: metronome.subdivision,
+      soundEnabled: metronome.soundEnabled,
+      hapticEnabled: metronome.hapticEnabled,
+      accentFirstBeat: metronome.accentFirstBeat,
+      displayMode,
+    };
+    pendingSaveRef.current = settings;
+    const timer = setTimeout(() => {
+      pendingSaveRef.current = null;
+      saveSettingsRef.current(settings);
+    }, SETTINGS_SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [
     metronome.tempo,
     metronome.timeSignature,
@@ -67,6 +87,13 @@ export default function MetronomeScreen() {
     displayMode,
     storage.isLoading,
   ]);
+
+  useEffect(
+    () => () => {
+      if (pendingSaveRef.current) saveSettingsRef.current(pendingSaveRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
     if (!storage.isLoading) {
@@ -80,18 +107,23 @@ export default function MetronomeScreen() {
     }
   }, [storage.isLoading]);
 
+  // Depend on the individual (stable) setters, not the `metronome` object - that's new on
+  // every beat, which re-rendered every control below the display while playing.
+  const { setTimeSignature, setSubdivision, setTempo } = metronome;
+  const { toggleFavoriteTempo, removeFavorite } = storage;
+
   const handleTimeSignatureChange = useCallback(
     (ts: TimeSignature) => {
-      metronome.setTimeSignature(ts);
+      setTimeSignature(ts);
     },
-    [metronome]
+    [setTimeSignature]
   );
 
   const handleSubdivisionChange = useCallback(
     (sub: Subdivision) => {
-      metronome.setSubdivision(sub);
+      setSubdivision(sub);
     },
-    [metronome]
+    [setSubdivision]
   );
 
   const handleDisplayModeChange = useCallback((mode: DisplayMode) => {
@@ -100,20 +132,21 @@ export default function MetronomeScreen() {
 
   const handleFavoriteSelect = useCallback(
     (tempo: number) => {
-      metronome.setTempo(tempo);
+      setTempo(tempo);
     },
-    [metronome]
+    [setTempo]
   );
 
+  const currentTempo = metronome.tempo;
   const handleToggleFavorite = useCallback(() => {
-    storage.toggleFavoriteTempo(metronome.tempo);
-  }, [storage, metronome.tempo]);
+    toggleFavoriteTempo(currentTempo);
+  }, [toggleFavoriteTempo, currentTempo]);
 
   const handleRemoveFavorite = useCallback(
     (id: string) => {
-      storage.removeFavorite(id);
+      removeFavorite(id);
     },
-    [storage]
+    [removeFavorite]
   );
 
   if (storage.isLoading) {

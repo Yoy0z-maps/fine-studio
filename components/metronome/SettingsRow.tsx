@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Switch, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import AppText from "@/components/AppText";
@@ -19,7 +20,10 @@ interface SettingsRowProps {
 }
 
 // Display 모드만 표시하는 상단 컴포넌트
-export function DisplayRow({ displayMode, onDisplayModeChange }: DisplayRowProps) {
+export const DisplayRow = memo(function DisplayRow({
+  displayMode,
+  onDisplayModeChange,
+}: DisplayRowProps) {
   const { t } = useTranslation("common");
   const colors = useColors();
 
@@ -62,10 +66,10 @@ export function DisplayRow({ displayMode, onDisplayModeChange }: DisplayRowProps
       </View>
     </View>
   );
-}
+});
 
 // Sound, Haptic, Accent 설정 (재생 버튼 아래용)
-export default function SettingsRow({
+function SettingsRow({
   soundEnabled,
   hapticEnabled,
   accentFirstBeat,
@@ -164,3 +168,5 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+
+export default memo(SettingsRow);

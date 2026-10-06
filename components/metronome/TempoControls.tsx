@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import AppText from "@/components/AppText";
@@ -11,7 +12,7 @@ interface TempoControlsProps {
   tapCount?: number;
 }
 
-export default function TempoControls({
+function TempoControls({
   tempo,
   onTempoChange,
   onTap,
@@ -186,3 +187,5 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+
+export default memo(TempoControls);

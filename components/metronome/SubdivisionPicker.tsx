@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import Svg, { Line, Ellipse, Text as SvgText, G } from "react-native-svg";
 import AppText from "@/components/AppText";
@@ -58,7 +59,7 @@ function NoteIcon({ type, color, size = 24 }: { type: Subdivision; color: string
   );
 }
 
-export default function SubdivisionPicker({
+function SubdivisionPicker({
   selected,
   onSelect,
 }: SubdivisionPickerProps) {
@@ -117,3 +118,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
+
+export default memo(SubdivisionPicker);

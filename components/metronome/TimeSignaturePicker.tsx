@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, TouchableOpacity, View, ScrollView } from "react-native";
 import AppText from "@/components/AppText";
 import { TimeSignature, DEFAULT_TIME_SIGNATURES } from "@/utils/metronome/types";
@@ -8,7 +9,7 @@ interface TimeSignaturePickerProps {
   onSelect: (ts: TimeSignature) => void;
 }
 
-export default function TimeSignaturePicker({
+function TimeSignaturePicker({
   selected,
   onSelect,
 }: TimeSignaturePickerProps) {
@@ -79,3 +80,5 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+
+export default memo(TimeSignaturePicker);

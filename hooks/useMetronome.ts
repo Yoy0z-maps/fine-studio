@@ -128,13 +128,13 @@ export function useMetronome(
     });
   }, []);
 
+  // Functional update instead of reading currentBeat: depending on it gave this callback (and
+  // everything downstream of it) a new identity on every beat.
   const setTimeSignature = useCallback((ts: TimeSignature) => {
     setTimeSignatureState(ts);
     ExpoMetronome.setBeats(ts.beats);
-    if (currentBeat >= ts.beats) {
-      setCurrentBeat(0);
-    }
-  }, [currentBeat]);
+    setCurrentBeat((beat) => (beat >= ts.beats ? 0 : beat));
+  }, []);
 
   const setSubdivision = useCallback((sub: Subdivision) => {
     setSubdivisionState(sub);

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, TouchableOpacity, View, ScrollView } from "react-native";
 import { useTranslation } from "react-i18next";
 import AppText from "@/components/AppText";
@@ -14,7 +15,7 @@ interface FavoriteTemposProps {
   onRemove: (id: string) => void;
 }
 
-export default function FavoriteTempos({
+function FavoriteTempos({
   favorites,
   currentTempo,
   isFavorite,
@@ -140,3 +141,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+export default memo(FavoriteTempos);
