@@ -3,7 +3,6 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native";
-import { useFonts } from "expo-font";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -15,7 +14,7 @@ import { languageRepo } from "@/utils/language";
 import { themeStorage } from "@/utils/themeStorage";
 import { AppThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { ThemeName } from "@/constants/themes";
+import { ThemeName, defaultTheme } from "@/constants/themes";
 import { useEffect, useState } from "react";
 import { useTrackingPermission } from "@/hooks/useTrackingPermission";
 import mobileAds from "react-native-google-mobile-ads";
@@ -53,7 +52,7 @@ function RootLayoutNav() {
         router.replace("/(tabs)");
       }
     }
-  }, [user, isLoading, isOnboardingComplete, segments]);
+  }, [user, isLoading, isOnboardingComplete, isTestMode, segments, router]);
 
   return (
     <Stack>
@@ -66,23 +65,6 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   const [initialTheme, setInitialTheme] = useState<ThemeName | null>(null);
-  const [loaded, error] = useFonts({
-    // Pretendard
-    PretendardThin: require("@/assets/fonts/pretendard/Pretendard-Thin.ttf"),
-    PretendardLight: require("@/assets/fonts/pretendard/Pretendard-Light.ttf"),
-    Pretendard: require("@/assets/fonts/pretendard/Pretendard-Regular.ttf"),
-    PretendardMedium: require("@/assets/fonts/pretendard/Pretendard-Medium.ttf"),
-    PretendardSemiBold: require("@/assets/fonts/pretendard/Pretendard-SemiBold.ttf"),
-    PretendardBold: require("@/assets/fonts/pretendard/Pretendard-Bold.ttf"),
-
-    // PretendardJP
-    PretendardJPThin: require("@/assets/fonts/pretendardJP/PretendardJP-Thin.ttf"),
-    PretendardJPLight: require("@/assets/fonts/pretendardJP/PretendardJP-Light.ttf"),
-    PretendardJP: require("@/assets/fonts/pretendardJP/PretendardJP-Regular.ttf"),
-    PretendardJPMedium: require("@/assets/fonts/pretendardJP/PretendardJP-Medium.ttf"),
-    PretendardJPSemiBold: require("@/assets/fonts/pretendardJP/PretendardJP-SemiBold.ttf"),
-    PretendardJPBold: require("@/assets/fonts/pretendardJP/PretendardJP-Bold.ttf"),
-  });
 
   const colorScheme = useColorScheme();
   const [ready, setReady] = useState(false);
@@ -100,13 +82,17 @@ export default function RootLayout() {
     let cancelled = false;
 
     (async () => {
-      const [savedTheme] = await Promise.all([
-        themeStorage.load(),
-        languageRepo.load(),
-      ]);
-
-      // 폰트 로딩 대기
-      if (!loaded && !error) return;
+      // 폰트는 expo-font 플러그인으로 네이티브에 임베드되어 런타임 로딩이 필요 없다
+      let savedTheme: ThemeName = defaultTheme;
+      try {
+        [savedTheme] = await Promise.all([
+          themeStorage.load(),
+          languageRepo.load(),
+        ]);
+      } catch (error) {
+        // 저장소 오류가 나도 스플래시에서 멈추지 않고 기본값으로 시작한다
+        console.warn("Failed to load saved preferences:", error);
+      }
 
       if (cancelled) return;
 
@@ -118,7 +104,7 @@ export default function RootLayout() {
     return () => {
       cancelled = true;
     };
-  }, [loaded, error]);
+  }, []);
 
   if (!ready || !initialTheme) return null;
 
