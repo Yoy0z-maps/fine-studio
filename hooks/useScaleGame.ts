@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useSharedValue, withTiming, SharedValue } from "react-native-reanimated";
 import {
   SCALE_LIST,
@@ -13,6 +13,7 @@ import {
   ScaleDifficultyConfig,
   ScaleGameFeedback,
 } from "@/types/scale";
+import { shuffled } from "@/utils/shuffle";
 
 // 난이도별 설정 (4개 스케일만 사용)
 const DIFFICULTY_CONFIG: Record<ScaleDifficulty, ScaleDifficultyConfig> = {
@@ -84,7 +85,7 @@ function getRandomQuestion(
     scaleName: scaleInfo.name,
     patternKey,
     pattern,
-    options: [scaleInfo.name, ...otherOptions.slice(0, 3)].sort(() => Math.random() - 0.5),
+    options: shuffled([scaleInfo.name, ...otherOptions.slice(0, 3)]),
   };
 }
 
@@ -121,6 +122,18 @@ export function useScaleGame(): UseScaleGameReturn {
   const [showAnswer, setShowAnswer] = useState(false);
 
   const feedbackOpacity = useSharedValue(0);
+  // The pause before the next question. Cleared when a game ends or restarts, so a pending one
+  // can't swap a question (built for the old difficulty/mode) into the next game.
+  const nextQuestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearNextQuestionTimer = useCallback(() => {
+    if (nextQuestionTimerRef.current) {
+      clearTimeout(nextQuestionTimerRef.current);
+      nextQuestionTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearNextQuestionTimer, [clearNextQuestionTimer]);
 
   const nextQuestion = useCallback(() => {
     const newQuestion = getRandomQuestion(difficulty, gameMode);
@@ -131,6 +144,8 @@ export function useScaleGame(): UseScaleGameReturn {
   }, [difficulty, gameMode]);
 
   const startGame = useCallback(() => {
+    clearNextQuestionTimer();
+    feedbackOpacity.value = 0;
     setIsGameActive(true);
     setScore(0);
     setTotalQuestions(0);
@@ -139,11 +154,13 @@ export function useScaleGame(): UseScaleGameReturn {
     setUserNotes(new Set());
     const newQuestion = getRandomQuestion(difficulty, gameMode);
     setQuestion(newQuestion);
-  }, [difficulty, gameMode]);
+  }, [difficulty, gameMode, clearNextQuestionTimer, feedbackOpacity]);
 
   const endGame = useCallback(() => {
+    clearNextQuestionTimer();
+    feedbackOpacity.value = 0;
     setIsGameActive(false);
-  }, []);
+  }, [clearNextQuestionTimer, feedbackOpacity]);
 
   const handleIdentifyAnswer = useCallback(
     (answer: string) => {
@@ -154,7 +171,8 @@ export function useScaleGame(): UseScaleGameReturn {
       if (isCorrect) setScore((prev) => prev + 1);
 
       feedbackOpacity.value = withTiming(1, { duration: 200 });
-      setTimeout(() => {
+      nextQuestionTimerRef.current = setTimeout(() => {
+        nextQuestionTimerRef.current = null;
         feedbackOpacity.value = withTiming(0, { duration: 200 });
         nextQuestion();
       }, 1200);
@@ -204,7 +222,8 @@ export function useScaleGame(): UseScaleGameReturn {
     }
 
     feedbackOpacity.value = withTiming(1, { duration: 200 });
-    setTimeout(() => {
+    nextQuestionTimerRef.current = setTimeout(() => {
+      nextQuestionTimerRef.current = null;
       feedbackOpacity.value = withTiming(0, { duration: 200 });
       nextQuestion();
     }, 2000);

@@ -1,7 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useSharedValue, withTiming, SharedValue } from "react-native-reanimated";
-import { CHORD_FILES_MAP } from "@/assets/data/chords/CHORD_FILES_MAP";
 import { loadChord } from "@/utils/chords/chordData";
+import { shuffled } from "@/utils/shuffle";
 import {
   parseBarres,
   parseFingers,
@@ -52,7 +52,8 @@ const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
       "add9",
       "9",
     ],
-    roots: ["C", "D", "E", "F", "G", "A", "B", "C#", "Eb", "F#", "Ab", "Bb"],
+    // The chord data names black keys with sharps - "Eb"/"Ab"/"Bb" matched nothing.
+    roots: ["C", "D", "E", "F", "G", "A", "B", "C#", "D#", "F#", "G#", "A#"],
     maxFret: 12,
   },
 };
@@ -61,33 +62,30 @@ const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
 // fret range without leaking it, so it always offers this fixed window.
 const INTERACTIVE_FRET_COUNT = 5;
 
-function getRandomChord(
-  difficulty: Difficulty,
-  gameMode: GameMode
-): GameQuestion | null {
+type ChordCandidate = {
+  root: string;
+  suffix: string;
+  displayName: string;
+  position: ChordPosition;
+  allPositions: ChordPosition[];
+};
+
+// A pool depends only on static data, so each (difficulty, mode) pool is built once instead of
+// re-parsing every matching chord's voicings for every question.
+const candidatePools = new Map<string, ChordCandidate[]>();
+
+function getCandidates(difficulty: Difficulty, gameMode: GameMode): ChordCandidate[] {
+  const cacheKey = `${difficulty}:${gameMode}`;
+  const cached = candidatePools.get(cacheKey);
+  if (cached) return cached;
+
   const config = DIFFICULTY_CONFIG[difficulty];
-  const availableChords: {
-    root: string;
-    suffix: string;
-    displayName: string;
-    position: ChordPosition;
-    allPositions: ChordPosition[];
-  }[] = [];
+  const pool: ChordCandidate[] = [];
 
-  for (const root of Object.keys(CHORD_FILES_MAP)) {
-    if (!config.roots.includes(root)) continue;
-
-    for (const suffix of Object.keys(CHORD_FILES_MAP[root])) {
-      const normalizedSuffix = suffix.toLowerCase().replace(/\s/g, "");
-      const matchesDifficulty = config.chords.some((c) => {
-        const normalized = c.toLowerCase().replace(/\s/g, "");
-        return (
-          normalizedSuffix === normalized ||
-          normalizedSuffix.startsWith(normalized)
-        );
-      });
-      if (!matchesDifficulty) continue;
-
+  for (const root of config.roots) {
+    // Exact chord types only: matching by prefix pulled in every variant sharing one - "7" also
+    // brought "7#9b5", "7sus4" and all their slash chords into the level-2 pool (132 types).
+    for (const suffix of config.chords) {
       const data = loadChord(root, suffix);
       if (!data?.positions?.length) continue;
 
@@ -97,7 +95,7 @@ function getRandomChord(
       // sizes itself to fit any position), so it isn't limited this way.
       const rawPosition =
         gameMode === "play"
-          ? data.positions.find((p: any) => {
+          ? data.positions.find((p) => {
               const played = parseFrets(p.frets).filter((f: number) => f > 0);
               return (
                 played.length === 0 ||
@@ -112,14 +110,14 @@ function getRandomChord(
       const maxFret = playedFrets.length > 0 ? Math.max(...playedFrets) : 0;
       if (maxFret > config.maxFret) continue;
 
-      const allPositions: ChordPosition[] = data.positions.map((p: any) => ({
+      const allPositions: ChordPosition[] = data.positions.map((p) => ({
         frets: parseFrets(p.frets),
         fingers: parseFingers(p.fingers),
         barres: parseBarres(p.barres),
         baseFret: p.baseFret || 1,
       }));
 
-      availableChords.push({
+      pool.push({
         root,
         suffix,
         displayName: `${root}${data.suffix || suffix}`,
@@ -134,13 +132,21 @@ function getRandomChord(
     }
   }
 
-  if (availableChords.length === 0) return null;
+  candidatePools.set(cacheKey, pool);
+  return pool;
+}
 
-  const selected =
-    availableChords[Math.floor(Math.random() * availableChords.length)];
-  const otherChords = availableChords
-    .filter((c) => c.displayName !== selected.displayName)
-    .sort(() => Math.random() - 0.5)
+function getRandomChord(
+  difficulty: Difficulty,
+  gameMode: GameMode
+): GameQuestion | null {
+  const candidates = getCandidates(difficulty, gameMode);
+  if (candidates.length === 0) return null;
+
+  const selected = candidates[Math.floor(Math.random() * candidates.length)];
+  const otherChords = shuffled(
+    candidates.filter((c) => c.displayName !== selected.displayName)
+  )
     .slice(0, 3)
     .map((c) => c.displayName);
 
@@ -150,9 +156,7 @@ function getRandomChord(
     suffix: selected.suffix,
     position: selected.position,
     allPositions: selected.allPositions,
-    options: [selected.displayName, ...otherChords].sort(
-      () => Math.random() - 0.5
-    ),
+    options: shuffled([selected.displayName, ...otherChords]),
   };
 }
 
@@ -191,6 +195,18 @@ export function useChordGame(): UseChordGameReturn {
   const [showAnswer, setShowAnswer] = useState(false);
 
   const feedbackOpacity = useSharedValue(0);
+  // The pause before the next question. Cleared when a game ends or restarts, so a pending one
+  // can't swap a question (built for the old difficulty/mode) into the next game.
+  const nextQuestionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearNextQuestionTimer = useCallback(() => {
+    if (nextQuestionTimerRef.current) {
+      clearTimeout(nextQuestionTimerRef.current);
+      nextQuestionTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearNextQuestionTimer, [clearNextQuestionTimer]);
 
   const nextQuestion = useCallback(() => {
     const newQuestion = getRandomChord(difficulty, gameMode);
@@ -201,6 +217,8 @@ export function useChordGame(): UseChordGameReturn {
   }, [difficulty, gameMode]);
 
   const startGame = useCallback(() => {
+    clearNextQuestionTimer();
+    feedbackOpacity.value = 0;
     setIsGameActive(true);
     setScore(0);
     setTotalQuestions(0);
@@ -209,11 +227,13 @@ export function useChordGame(): UseChordGameReturn {
     setUserFrets([-1, -1, -1, -1, -1, -1]);
     const newQuestion = getRandomChord(difficulty, gameMode);
     setQuestion(newQuestion);
-  }, [difficulty, gameMode]);
+  }, [difficulty, gameMode, clearNextQuestionTimer, feedbackOpacity]);
 
   const endGame = useCallback(() => {
+    clearNextQuestionTimer();
+    feedbackOpacity.value = 0;
     setIsGameActive(false);
-  }, []);
+  }, [clearNextQuestionTimer, feedbackOpacity]);
 
   const handleIdentifyAnswer = useCallback(
     (answer: string) => {
@@ -224,7 +244,8 @@ export function useChordGame(): UseChordGameReturn {
       if (isCorrect) setScore((prev) => prev + 1);
 
       feedbackOpacity.value = withTiming(1, { duration: 200 });
-      setTimeout(() => {
+      nextQuestionTimerRef.current = setTimeout(() => {
+        nextQuestionTimerRef.current = null;
         feedbackOpacity.value = withTiming(0, { duration: 200 });
         nextQuestion();
       }, 1200);
@@ -260,7 +281,8 @@ export function useChordGame(): UseChordGameReturn {
     }
 
     feedbackOpacity.value = withTiming(1, { duration: 200 });
-    setTimeout(() => {
+    nextQuestionTimerRef.current = setTimeout(() => {
+      nextQuestionTimerRef.current = null;
       feedbackOpacity.value = withTiming(0, { duration: 200 });
       nextQuestion();
     }, 2000);
