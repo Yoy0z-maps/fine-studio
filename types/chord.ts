@@ -18,6 +18,13 @@ export interface RawChordPosition {
   baseFret?: number;
 }
 
+// 코드 파일 원본 (assets/data/chords/<ROOT>/<suffix>.json)
+export interface ChordFileData {
+  key: string;
+  suffix: string;
+  positions: RawChordPosition[];
+}
+
 // 코드 아이템 (목록용)
 export interface ChordItem {
   root: string;

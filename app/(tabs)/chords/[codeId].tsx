@@ -1,11 +1,11 @@
-import { CHORD_FILES_MAP } from "@/assets/data/chords/CHORD_FILES_MAP";
 import AppText from "@/components/AppText";
 import GuitarFretboard from "@/components/GuitarFretboard";
 import { useColors } from "@/contexts/ThemeContext";
 import { useChordStorage } from "@/hooks/useChordStorage";
 import { FINGER_COLORS } from "@/types/chord";
+import { chordDisplayName, loadChord } from "@/utils/chords/chordData";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,14 +22,12 @@ export default function CodeDetailScreen() {
   const [positionIndex, setPositionIndex] = useState(0);
   const { addRecentChord, toggleFavorite, isFavorite } = useChordStorage();
 
-  const chordData = CHORD_FILES_MAP[root]?.[suffix];
+  const chordData = useMemo(() => loadChord(root, suffix), [root, suffix]);
   const positions = chordData?.positions || [];
   const currentPosition = positions[positionIndex];
 
-  // 실제 표시용 코드 이름 (JSON의 suffix 사용)
-  const displayName = chordData
-    ? `${chordData.key}${chordData.suffix}`
-    : `${root}${suffix}`;
+  // 실제 표시용 코드 이름 (JSON의 key + suffix와 같은 값)
+  const displayName = chordDisplayName(root, suffix);
 
   const currentChord = { root, suffix, displayName };
   const isCurrentFavorite = isFavorite(currentChord);

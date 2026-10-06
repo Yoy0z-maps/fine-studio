@@ -21,8 +21,8 @@ import { useChordStorage, StoredChord } from "@/hooks/useChordStorage";
 import { useScaleStorage } from "@/hooks/useScaleStorage";
 import { useChordGame } from "@/hooks/useChordGame";
 import { useScaleGame } from "@/hooks/useScaleGame";
-import { CHORD_FILES_MAP } from "@/assets/data/chords/CHORD_FILES_MAP";
 import { SCALE_LIST } from "@/assets/data/scales/SCALE_FILES_MAP";
+import { getChordSearchIndex } from "@/utils/chords/chordData";
 import { ChordItem } from "@/types/chord";
 import { ScaleItem, StoredScale } from "@/types/scale";
 
@@ -52,32 +52,20 @@ export default function ChordsScreen() {
 
   const isGameActive = gameType === "chord" ? chordGame.isGameActive : scaleGame.isGameActive;
 
-  // 검색 결과
+  // 검색 결과 - 코드 파일을 로드하지 않고 이름 인덱스에서만 찾는다
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
 
-    const query = searchQuery.trim();
     const results: ChordItem[] = [];
-
-    for (const root of Object.keys(CHORD_FILES_MAP)) {
-      for (const suffix of Object.keys(CHORD_FILES_MAP[root])) {
-        const data = CHORD_FILES_MAP[root][suffix];
-        if (!data?.positions?.length) continue;
-
-        const displayName = `${data.key}${data.suffix || suffix}`;
-
-        // 검색어가 코드 이름에 포함되어 있는지 확인
-        if (displayName.toLowerCase().includes(query.toLowerCase())) {
-          results.push({
-            root,
-            suffix,
-            displayName,
-          });
-        }
+    for (const { root, suffix, displayName, searchName } of getChordSearchIndex()) {
+      // 검색어가 코드 이름에 포함되어 있는지 확인
+      if (searchName.includes(query)) {
+        results.push({ root, suffix, displayName });
+        if (results.length === 20) break; // 최대 20개
       }
     }
-
-    return results.slice(0, 20); // 최대 20개
+    return results;
   }, [searchQuery]);
 
   const handleChordSelect = (chord: StoredChord | ChordItem) => {

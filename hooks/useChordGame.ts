@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useSharedValue, withTiming, SharedValue } from "react-native-reanimated";
 import { CHORD_FILES_MAP } from "@/assets/data/chords/CHORD_FILES_MAP";
+import { loadChord } from "@/utils/chords/chordData";
 import {
   parseBarres,
   parseFingers,
@@ -77,9 +78,6 @@ function getRandomChord(
     if (!config.roots.includes(root)) continue;
 
     for (const suffix of Object.keys(CHORD_FILES_MAP[root])) {
-      const data = CHORD_FILES_MAP[root][suffix];
-      if (!data?.positions?.length) continue;
-
       const normalizedSuffix = suffix.toLowerCase().replace(/\s/g, "");
       const matchesDifficulty = config.chords.some((c) => {
         const normalized = c.toLowerCase().replace(/\s/g, "");
@@ -89,6 +87,9 @@ function getRandomChord(
         );
       });
       if (!matchesDifficulty) continue;
+
+      const data = loadChord(root, suffix);
+      if (!data?.positions?.length) continue;
 
       // "Play" mode requires the user to tap out the answer on a fixed 1-5
       // fret grid, so only voicings that fit in it can ever be answered
