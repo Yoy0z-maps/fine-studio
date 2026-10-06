@@ -61,13 +61,12 @@ fine-studio/
 │   ├── fonts/                    # Pretendard 폰트
 │   ├── data/chords/              # 코드 JSON 데이터
 │   └── sounds/                   # 사운드 파일
-├── expo-metronome/               # 메트로놈 네이티브 모듈
-│   ├── ios/                      # Swift 구현
-│   └── android/                  # Kotlin 구현
-└── expo-pcm-stream/              # 마이크 캡처 + 네이티브 피치 감지 모듈 (튜너)
+└── expo-metronome/               # 메트로놈 네이티브 모듈
     ├── ios/                      # Swift 구현
     └── android/                  # Kotlin 구현
 ```
+
+튜너의 마이크 캡처·피치 감지 모듈은 npm 패키지 [`expo-pcm-stream`](https://www.npmjs.com/package/expo-pcm-stream)으로 사용합니다 (아래 [네이티브 모듈](#네이티브-모듈) 참고).
 
 ---
 
@@ -154,45 +153,14 @@ ExpoMetronome.setAccentEnabled(enabled: boolean);
 ExpoMetronome.addListener('onBeat', ({ beat, isAccent, tempo, subBeat }) => {});
 ```
 
-### expo-pcm-stream
+### expo-pcm-stream (npm 패키지)
 
-마이크 캡처와 피치 감지를 모두 네이티브에서 처리하고, 홉(기본 1024샘플)마다 결과만 JS로 보내는 튜너용 모듈.
+튜너용 마이크 캡처 + 네이티브 피치 감지 모듈. 별도 저장소에서 개발해 npm으로 배포하고, 이 앱은 `expo-pcm-stream` 패키지로 의존합니다.
 
-**기술 구현:**
-- 피치 감지: McLeod Pitch Method(MPM), FFT 기반 자기상관(iOS는 Accelerate/vDSP, Android는 자체 실수 FFT). 35Hz 하이패스 필터를 스트림 전체에 연속 적용
-- iOS: AVAudioEngine + AVAudioSinkNode(실시간 스레드는 링버퍼 복사만, 분석은 전용 스레드). 세션은 `.playAndRecord`/`.measurement`, 정지 시 원래 세션으로 복원. 인터럽션·라우트 변경 시 자동 재시작
-- Android: AudioRecord(VOICE_RECOGNITION 소스 — AGC/노이즈 억제 꺼짐, 기기 기본 샘플레이트), URGENT_AUDIO 우선순위 스레드
-
-**API:**
-```typescript
-import ExpoPcmStream from 'expo-pcm-stream';
-
-// 시작 (iOS는 권한이 미결정이면 여기서 요청, 거부 시 ERR_MIC_PERMISSION으로 reject)
-await ExpoPcmStream.start({
-  windowSize: 2048,        // 분석 윈도우
-  hopSize: 1024,           // 이벤트 간격
-  minFrequency: 65,
-  maxFrequency: 1500,
-  silenceThreshold: 0.002, // 이보다 조용한 홉은 감지 생략
-});
-
-// 재시작 없이 감지 범위 변경 (튜너 모드 전환)
-ExpoPcmStream.setFrequencyRange(70, 400);
-
-// 정지
-await ExpoPcmStream.stop();
-
-// 이벤트 (홉마다)
-ExpoPcmStream.addListener('onPitch', ({ frequency, clarity, rms }) => {
-  // frequency: Hz 또는 null(무음/주기성 부족), clarity: 0..1 신뢰도, rms: 레벨
-});
-
-ExpoPcmStream.addListener('onPitchStreamError', ({ code, message }) => {});
-
-// iOS 전용 권한 API (Android는 PermissionsAndroid 사용)
-await ExpoPcmStream.getPermissionStatus(); // 'granted' | 'denied' | 'undetermined'
-await ExpoPcmStream.requestPermission();
-```
+- npm: https://www.npmjs.com/package/expo-pcm-stream
+- 저장소: https://github.com/Yoy0z-maps/expo-pcm-stream (API·동작 원리는 패키지 README 참고)
+- 모듈을 고칠 때는 저장소에서 버전을 올려 배포한 뒤, 이 앱의 의존성 버전을 올립니다.
+- 네이티브 API가 바뀐 버전으로 올릴 때는 앱 버전도 함께 올려야 합니다. `runtimeVersion` 정책이 `appVersion`이라 버전을 올리지 않으면 기존 바이너리가 새 JS를 OTA로 받아 튜너가 깨집니다.
 
 ---
 
