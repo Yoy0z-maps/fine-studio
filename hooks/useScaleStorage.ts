@@ -13,11 +13,10 @@ export function useScaleStorage() {
   const [favoriteScales, setFavoriteScales] = useState<StoredScale[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadStorage();
-  }, []);
-
-  const loadStorage = async () => {
+  // Stable identity matters: screens call this from useFocusEffect, which re-runs its effect
+  // whenever the callback changes - a new function every render made each reload's setState
+  // trigger yet another reload, looping for as long as the tab stayed focused.
+  const loadStorage = useCallback(async () => {
     try {
       const [recentJson, favoriteJson] = await Promise.all([
         AsyncStorage.getItem(RECENT_SCALES_KEY),
@@ -35,7 +34,11 @@ export function useScaleStorage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadStorage();
+  }, [loadStorage]);
 
   const addRecentScale = useCallback(async (scale: StoredScale) => {
     try {

@@ -14,12 +14,10 @@ export function useChordStorage() {
   const [favoriteChords, setFavoriteChords] = useState<StoredChord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 초기 로드
-  useEffect(() => {
-    loadStorage();
-  }, []);
-
-  const loadStorage = async () => {
+  // Stable identity matters: screens call this from useFocusEffect, which re-runs its effect
+  // whenever the callback changes - a new function every render made each reload's setState
+  // trigger yet another reload, looping for as long as the tab stayed focused.
+  const loadStorage = useCallback(async () => {
     try {
       const [recentJson, favoriteJson] = await Promise.all([
         AsyncStorage.getItem(RECENT_CHORDS_KEY),
@@ -37,7 +35,12 @@ export function useChordStorage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // 초기 로드
+  useEffect(() => {
+    loadStorage();
+  }, [loadStorage]);
 
   // 최근 검색에 추가
   const addRecentChord = useCallback(async (chord: StoredChord) => {
