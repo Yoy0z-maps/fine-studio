@@ -43,7 +43,14 @@
     "chromatic": "クロマチック",
     "flat": "フラット",
     "sharp": "シャープ",
-    "cents": "セント"
+    "cents": "セント",
+    "instruments": {
+      "guitar": "ギター",
+      "ukulele": "ウクレレ",
+      "bass": "ベース",
+      "violin": "バイオリン",
+      "cello": "チェロ"
+    }
   },
   "metronome": {
     "title": "テンポ",

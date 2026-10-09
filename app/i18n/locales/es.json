@@ -43,7 +43,14 @@
     "chromatic": "CROMÁTICO",
     "flat": "BEMOL",
     "sharp": "SOSTENIDO",
-    "cents": "cents"
+    "cents": "cents",
+    "instruments": {
+      "guitar": "Guitarra",
+      "ukulele": "Ukelele",
+      "bass": "Bajo",
+      "violin": "Violín",
+      "cello": "Violonchelo"
+    }
   },
   "metronome": {
     "title": "Tempo",

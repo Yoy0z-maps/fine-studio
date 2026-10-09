@@ -43,7 +43,14 @@
     "chromatic": "半音阶",
     "flat": "偏低",
     "sharp": "偏高",
-    "cents": "音分"
+    "cents": "音分",
+    "instruments": {
+      "guitar": "吉他",
+      "ukulele": "尤克里里",
+      "bass": "贝斯",
+      "violin": "小提琴",
+      "cello": "大提琴"
+    }
   },
   "metronome": {
     "title": "节拍",

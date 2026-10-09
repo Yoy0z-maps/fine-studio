@@ -43,7 +43,14 @@
     "chromatic": "크로매틱",
     "flat": "플랫",
     "sharp": "샤프",
-    "cents": "센트"
+    "cents": "센트",
+    "instruments": {
+      "guitar": "기타",
+      "ukulele": "우쿨렐레",
+      "bass": "베이스",
+      "violin": "바이올린",
+      "cello": "첼로"
+    }
   },
   "metronome": {
     "title": "템포",

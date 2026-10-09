@@ -1,5 +1,6 @@
 // Pitch detection itself runs natively (expo-pcm-stream: McLeod Pitch Method on a continuously
-// high-passed stream); this file only smooths its per-hop readings for display.
+// high-passed stream, refined to the fundamental partial); this file only smooths its per-hop
+// readings for display.
 
 // Adaptive smoothing: snaps instantly on a genuine note change (confirmed across two
 // consecutive readings so a single stray frame can't flicker the display), and gently
@@ -15,8 +16,21 @@ export class PitchTracker {
   private smoothedFreq: number | null = null;
   private pendingFreq: number | null = null;
 
-  /** `freq` is null when the latest hop had no confident pitch: the held reading is kept. */
-  update(freq: number | null): number | null {
+  /**
+   * `freq` is null when the latest hop had no pitch: the held reading is kept. A reading that
+   * isn't `confident` (low clarity) may refine the held note but not start a new one - as a
+   * plucked note dies into room noise, the detector's last readings are often an octave off.
+   */
+  update(freq: number | null, confident = true): number | null {
+    if (
+      freq != null &&
+      !confident &&
+      (this.smoothedFreq == null ||
+        Math.abs(1200 * Math.log2(freq / this.smoothedFreq)) > JUMP_CENTS)
+    ) {
+      freq = null;
+    }
+
     if (freq == null) {
       // Nothing shown yet: the confirming reading has to be the very next one.
       if (this.smoothedFreq == null) this.pendingFreq = null;

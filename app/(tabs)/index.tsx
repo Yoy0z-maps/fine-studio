@@ -2,75 +2,79 @@ import AppText from "@/components/AppText";
 import { useColors } from "@/contexts/ThemeContext";
 import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
 import { useDeviceScale } from "@/hooks/useDeviceScale";
+import { useTunerSettings } from "@/hooks/useTunerSettings";
+import { INSTRUMENT_IDS, INSTRUMENTS, InstrumentId } from "@/utils/audio/instruments";
 import {
-  nearestChromaticTarget,
-  nearestGuitarTarget,
-} from "@/utils/audio/guitar";
-import { PitchTracker } from "@/utils/audio/pitch";
+  LOCK_ENTER_CENTS,
+  SILENCE_THRESHOLD,
+  TunerEngine,
+  TunerMode,
+  TunerReading,
+} from "@/utils/audio/tuner";
 import { useFocusEffect } from "@react-navigation/native";
 import ExpoPcmStream, { type PitchEvent } from "expo-pcm-stream";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { AppState, StyleSheet, TouchableOpacity, View, Dimensions, Platform } from "react-native";
+import { useTranslation } from "react-i18next";
+import {
+  AppState,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  Dimensions,
+  Platform,
+  type LayoutChangeEvent,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
-  interpolateColor,
 } from "react-native-reanimated";
 import Svg, { Path, Circle, Line, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ScreenBannerAd from "@/components/ads/ScreenBannerAd";
 
-type Info = {
-  hz?: number;
-  note?: string;
-  octave?: number;
-  cents?: number;
-  locked?: boolean;
-  guitarString?: number;
-};
+type Info = Omit<TunerReading, "targetHz">;
 
 // ===== DSP params (detection itself runs natively in expo-pcm-stream) =====
 const HOP = 1024;
-const WINDOW = 2048;
 const MAX_CENTS_UI = 50;
-const GATE = 0.002;
-const FADE_OUT_MS = 300;
-const LOCK_CENTS = 10;
-const LOCK_MS = 400;
-const LOCK_MIN_CLARITY = 0.8; // require a confident detection before showing "in tune"
-const SWITCH_CENTS = 35;
 const UI_INTERVAL = 50;
 
-// Standard mode is deliberately narrow (tailored to guitar + margin for detuning).
-// Chromatic mode needs to cover any note - the old fixed 70-400Hz range couldn't even
-// detect a ukulele's open A string (440Hz) or a guitar's high frets.
-const STANDARD_MIN_FREQ = 70;
-const STANDARD_MAX_FREQ = 400;
-const CHROMATIC_MIN_FREQ = 65;
-const CHROMATIC_MAX_FREQ = 1500;
+// The needle sweeps +-45 degrees for +-50 cents, magnified around the center: the last few
+// cents are what tuning is about, and on a linear scale 1 cent is under a degree.
+const GAUGE_EXPONENT = 0.6; // 1 cent -> 4.3 deg, 3 cents -> 8.3 deg, 10 -> 17 deg, 50 -> 45 deg
+const GAUGE_TICKS = [-50, -40, -30, -20, -10, -5, 0, 5, 10, 20, 30, 40, 50];
+const NEEDLE_SPRING = { damping: 15, stiffness: 100 };
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const BASE_GAUGE_SIZE = Math.min(SCREEN_WIDTH - 48, 320);
 
-// 기타 줄 이름
-const GUITAR_STRINGS = ["E", "A", "D", "G", "B", "E"];
+const EMPTY_INFO: Info = { locked: false };
 
-const frequencyRange = (standardMode: boolean) =>
-  standardMode
-    ? { minFrequency: STANDARD_MIN_FREQ, maxFrequency: STANDARD_MAX_FREQ }
-    : { minFrequency: CHROMATIC_MIN_FREQ, maxFrequency: CHROMATIC_MAX_FREQ };
+const centsToAngle = (cents: number) => {
+  const clamped = Math.max(-MAX_CENTS_UI, Math.min(MAX_CENTS_UI, cents));
+  return Math.sign(clamped) * 45 * Math.pow(Math.abs(clamped) / MAX_CENTS_UI, GAUGE_EXPONENT);
+};
 
-// What the screen shows: Hz to 0.1, cents to whole numbers. Comparing these (rather than the raw
-// readings) lets a held note or silence skip re-rendering entirely.
-const toDisplayInfo = (info: Info): Info => ({
-  hz: info.hz != null ? Math.round(info.hz * 10) / 10 : undefined,
+// What the screen shows: Hz to 0.01 below 100 Hz (0.1 Hz is ~2-4 cents down there) and to 0.1
+// above, cents to 0.1. Comparing these (rather than the raw readings) lets a held note or
+// silence skip re-rendering entirely.
+const roundHz = (hz: number) => (hz < 100 ? Math.round(hz * 100) / 100 : Math.round(hz * 10) / 10);
+const formatHz = (hz: number) => hz.toFixed(hz < 100 ? 2 : 1);
+const formatCents = (cents: number) => {
+  const text = Math.abs(cents) < 100 ? cents.toFixed(1) : cents.toFixed(0);
+  return cents > 0 ? `+${text}` : text;
+};
+
+const toDisplayInfo = (info: TunerReading): Info => ({
+  hz: info.hz != null ? roundHz(info.hz) : undefined,
   note: info.note,
   octave: info.octave,
-  cents: info.cents != null ? Math.round(info.cents) : undefined,
-  locked: info.locked ?? false,
-  guitarString: info.guitarString,
+  cents: info.cents != null ? Math.round(info.cents * 10) / 10 : undefined,
+  stringNumber: info.stringNumber,
+  locked: info.locked,
 });
 
 const sameDisplayInfo = (a: Info, b: Info) =>
@@ -79,7 +83,7 @@ const sameDisplayInfo = (a: Info, b: Info) =>
   a.octave === b.octave &&
   a.cents === b.cents &&
   a.locked === b.locked &&
-  a.guitarString === b.guitarString;
+  a.stringNumber === b.stringNumber;
 
 const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
   const rad = ((angle - 90) * Math.PI) / 180;
@@ -106,11 +110,18 @@ const createArcPath = (
 
 export default function TunerScreen() {
   const colors = useColors();
-  const { scale, isTablet } = useDeviceScale();
+  const { t } = useTranslation();
+  const { scale } = useDeviceScale();
   const { status, isLoading, isBlocked, checkPermission, requestPermission, openSettings } =
     useMicrophonePermission();
   // iOS asks for the permission itself when the stream starts; Android needs it granted first.
   const needsPermission = Platform.OS === "android" ? status !== "granted" : isBlocked;
+
+  const { settings, isLoaded: settingsLoaded, updateSettings } = useTunerSettings();
+  const instrument = INSTRUMENTS[settings.instrument];
+  const mode = settings.mode;
+  // A string tapped to tune it regardless of what's detected (null: automatic).
+  const [pinnedString, setPinnedString] = useState<number | null>(null);
 
   // 스케일된 사이즈
   const sizes = useMemo(() => {
@@ -133,38 +144,47 @@ export default function TunerScreen() {
   const noteScale = useSharedValue(1);
   const lockedProgress = useSharedValue(0);
 
-  // ===== DSP refs =====
-  const pitchTrackerRef = useRef(new PitchTracker());
-  const targetRef = useRef<{
-    name: string;
-    freq: number;
-    string: number;
-  } | null>(null);
-  const lockSinceRef = useRef<number | null>(null);
-  const lastNoteRef = useRef<string | null>(null);
-  const silentSinceRef = useRef<number | null>(null);
+  // ===== Detection state =====
+  const engineRef = useRef<TunerEngine | null>(null);
+  if (engineRef.current == null) engineRef.current = new TunerEngine(instrument, mode);
+  const rangeRef = useRef(instrument.stringRange);
 
   // ===== Performance refs =====
   const lastUiUpdateRef = useRef(0);
-  const pendingInfoRef = useRef<Info>({});
-  const shownInfoRef = useRef<Info>({});
-  const needleCentsRef = useRef(0);
+  const pendingInfoRef = useRef<TunerReading>(EMPTY_INFO);
+  const shownInfoRef = useRef<Info>(EMPTY_INFO);
+  const needleAngleRef = useRef(0);
 
-  const [info, setInfo] = useState<Info>({});
-  const [isStandardMode, setIsStandardMode] = useState(true);
-  const modeRef = useRef(true);
+  const [info, setInfo] = useState<Info>(EMPTY_INFO);
 
+  const setNeedle = useCallback(
+    (cents: number) => {
+      const angle = centsToAngle(cents);
+      if (Math.abs(angle - needleAngleRef.current) < 0.05) return;
+      needleAngleRef.current = angle;
+      // Animated on the UI thread
+      needleRotation.value = withSpring(angle, NEEDLE_SPRING);
+    },
+    [needleRotation]
+  );
+
+  const resetDisplay = useCallback(() => {
+    pendingInfoRef.current = EMPTY_INFO;
+    shownInfoRef.current = EMPTY_INFO;
+    setInfo(EMPTY_INFO);
+    setNeedle(0);
+  }, [setNeedle]);
+
+  // Instrument or mode changed: retarget detection. The range switches in place; a different
+  // analysis window restarts the stream (the focus effect below depends on it).
   useEffect(() => {
-    modeRef.current = isStandardMode;
-    // Switches the native detection range in place - no audio restart.
-    const { minFrequency, maxFrequency } = frequencyRange(isStandardMode);
-    ExpoPcmStream.setFrequencyRange(minFrequency, maxFrequency);
-    targetRef.current = null;
-    silentSinceRef.current = null;
-    lockSinceRef.current = null;
-    lastNoteRef.current = null;
-    pitchTrackerRef.current.reset();
-  }, [isStandardMode]);
+    engineRef.current!.configure(instrument, mode);
+    setPinnedString(null);
+    const range = mode === "strings" ? instrument.stringRange : instrument.chromaticRange;
+    rangeRef.current = range;
+    ExpoPcmStream.setFrequencyRange(range.minFrequency, range.maxFrequency);
+    resetDisplay();
+  }, [instrument, mode, resetDisplay]);
 
   // Locked state animation (the needle is driven directly from the pitch events)
   useEffect(() => {
@@ -177,23 +197,14 @@ export default function TunerScreen() {
     }
   }, [info.locked]);
 
+  const windowSize = instrument.windowSize;
   useFocusEffect(
     useCallback(() => {
       // Android에서 권한이 없으면 시작하지 않음 (iOS는 시작 시 네이티브가 직접 요청)
-      if (needsPermission) {
+      // Also wait for the saved instrument, so a bass doesn't start on the guitar's window.
+      if (needsPermission || !settingsLoaded) {
         return;
       }
-
-      const setNeedle = (cents: number) => {
-        const clamped = Math.max(-MAX_CENTS_UI, Math.min(MAX_CENTS_UI, cents));
-        if (Math.abs(clamped - needleCentsRef.current) < 0.05) return;
-        needleCentsRef.current = clamped;
-        // Needle rotation: -45 to +45 degrees, animated on the UI thread
-        needleRotation.value = withSpring((clamped / MAX_CENTS_UI) * 45, {
-          damping: 15,
-          stiffness: 100,
-        });
-      };
 
       const maybeUpdateUi = (now: number) => {
         if (now - lastUiUpdateRef.current < UI_INTERVAL) return;
@@ -206,114 +217,9 @@ export default function TunerScreen() {
         }
       };
 
-      const resetDetection = () => {
-        pitchTrackerRef.current.reset();
-        targetRef.current = null;
-        silentSinceRef.current = null;
-        lockSinceRef.current = null;
-        lastNoteRef.current = null;
-        pendingInfoRef.current = {};
-        shownInfoRef.current = {};
-        setInfo({});
-        setNeedle(0);
-      };
-
-      const processPitch = ({ frequency, clarity, rms }: PitchEvent) => {
+      const processPitch = (event: PitchEvent) => {
         const now = Date.now();
-
-        if (rms < GATE) {
-          if (silentSinceRef.current === null) {
-            silentSinceRef.current = now;
-          }
-
-          const silentDuration = now - silentSinceRef.current;
-
-          if (silentDuration >= FADE_OUT_MS) {
-            pendingInfoRef.current = {};
-            pitchTrackerRef.current.reset();
-            targetRef.current = null;
-            lockSinceRef.current = null;
-          } else {
-            pendingInfoRef.current = {
-              ...pendingInfoRef.current,
-              locked: false,
-            };
-          }
-          maybeUpdateUi(now);
-          return;
-        }
-
-        silentSinceRef.current = null;
-
-        const smoothedHz = pitchTrackerRef.current.update(frequency);
-        if (!smoothedHz) return;
-
-        let noteName: string;
-        let cents: number;
-        let guitarString: number | undefined;
-        let octave: number | undefined;
-
-        if (modeRef.current) {
-          const nearest = nearestGuitarTarget(smoothedHz);
-
-          if (!targetRef.current) {
-            targetRef.current = {
-              name: nearest.name,
-              freq: nearest.freq,
-              string: nearest.string,
-            };
-          } else {
-            const curr = targetRef.current;
-            const currCents = 1200 * Math.log2(smoothedHz / curr.freq);
-            if (Math.abs(nearest.cents) + SWITCH_CENTS < Math.abs(currCents)) {
-              targetRef.current = {
-                name: nearest.name,
-                freq: nearest.freq,
-                string: nearest.string,
-              };
-            }
-          }
-
-          const target = targetRef.current!;
-          cents = 1200 * Math.log2(smoothedHz / target.freq);
-          noteName = target.name;
-          guitarString = target.string;
-        } else {
-          const chromatic = nearestChromaticTarget(smoothedHz);
-          noteName = chromatic.name.replace(/\d+$/, "");
-          octave = parseInt(chromatic.name.match(/\d+$/)?.[0] ?? "4");
-          cents = chromatic.cents;
-          targetRef.current = null;
-        }
-
-        // Only a fresh, confident detection may advance or reset the lock timer - a
-        // single transient miss (frequency == null, still showing the held smoothedHz)
-        // just holds whatever lock state was already in progress instead of flickering.
-        if (frequency != null && clarity >= LOCK_MIN_CLARITY) {
-          const inTune = Math.abs(cents) <= LOCK_CENTS;
-          if (inTune) {
-            if (lastNoteRef.current !== noteName) {
-              lastNoteRef.current = noteName;
-              lockSinceRef.current = now;
-            } else if (lockSinceRef.current == null) {
-              lockSinceRef.current = now;
-            }
-          } else {
-            lastNoteRef.current = noteName;
-            lockSinceRef.current = null;
-          }
-        }
-
-        const locked =
-          lockSinceRef.current != null && now - lockSinceRef.current >= LOCK_MS;
-        pendingInfoRef.current = {
-          hz: smoothedHz,
-          note: noteName,
-          octave,
-          cents,
-          locked,
-          guitarString,
-        };
+        pendingInfoRef.current = engineRef.current!.process(event, now);
         maybeUpdateUi(now);
       };
 
@@ -327,10 +233,10 @@ export default function TunerScreen() {
         if (running) return;
         running = true;
         ExpoPcmStream.start({
-          windowSize: WINDOW,
+          windowSize,
           hopSize: HOP,
-          silenceThreshold: GATE,
-          ...frequencyRange(modeRef.current),
+          silenceThreshold: SILENCE_THRESHOLD,
+          ...rangeRef.current,
         }).catch((error) => {
           running = false;
           if (error?.code === "ERR_MIC_PERMISSION") {
@@ -344,7 +250,8 @@ export default function TunerScreen() {
         if (!running) return;
         running = false;
         ExpoPcmStream.stop().catch(() => {});
-        resetDetection();
+        engineRef.current!.reset();
+        resetDisplay();
       };
 
       if (AppState.currentState !== "background") {
@@ -363,8 +270,38 @@ export default function TunerScreen() {
         errorSub.remove();
         stop();
       };
-    }, [needsPermission, checkPermission, needleRotation]),
+    }, [needsPermission, settingsLoaded, windowSize, checkPermission, setNeedle, resetDisplay]),
   );
+
+  const selectInstrument = (id: InstrumentId) => {
+    if (id !== settings.instrument) updateSettings({ instrument: id });
+  };
+
+  const selectMode = (next: TunerMode) => {
+    if (next !== mode) updateSettings({ mode: next });
+  };
+
+  const pinString = (stringNumber: number | null) => {
+    setPinnedString(stringNumber);
+    engineRef.current!.pinString(stringNumber);
+  };
+
+  // Keep the selected instrument in view: the row scrolls on narrow screens and long names.
+  const instrumentScrollRef = useRef<ScrollView>(null);
+  const instrumentLayoutsRef = useRef<Partial<Record<InstrumentId, { x: number; width: number }>>>({});
+  const instrumentScrollWidthRef = useRef(0);
+  const instrumentContentWidthRef = useRef(0);
+  const scrollToInstrument = useCallback((id: InstrumentId, animated: boolean) => {
+    const layout = instrumentLayoutsRef.current[id];
+    const viewWidth = instrumentScrollWidthRef.current;
+    const maxX = instrumentContentWidthRef.current - viewWidth;
+    if (!layout || viewWidth <= 0 || maxX <= 0) return;
+    const x = layout.x + layout.width / 2 - viewWidth / 2;
+    instrumentScrollRef.current?.scrollTo({ x: Math.max(0, Math.min(maxX, x)), animated });
+  }, []);
+  useEffect(() => {
+    scrollToInstrument(settings.instrument, true);
+  }, [settings.instrument, scrollToInstrument]);
 
   const noteAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: noteScale.value }],
@@ -387,10 +324,27 @@ export default function TunerScreen() {
           strokeLinecap="round"
         />
 
-        {/* Tick marks */}
-        {[-45, -30, -15, 0, 15, 30, 45].map((angle, i) => {
-          const isMajor = angle === 0;
-          const innerR = sizes.gaugeRadius - (isMajor ? 20 * scale : 12 * scale);
+        {/* IN TUNE zone */}
+        <Path
+          d={createArcPath(
+            sizes.gaugeSize,
+            centsToAngle(-LOCK_ENTER_CENTS),
+            centsToAngle(LOCK_ENTER_CENTS),
+            sizes.gaugeRadius
+          )}
+          stroke={colors.primary}
+          strokeOpacity={0.45}
+          strokeWidth={8 * scale}
+          fill="none"
+        />
+
+        {/* Tick marks at true cent values, placed on the magnified scale */}
+        {GAUGE_TICKS.map((cents) => {
+          const angle = centsToAngle(cents);
+          const isCenter = cents === 0;
+          const isMajor = cents % 50 === 0 || Math.abs(cents) === 10;
+          const length = isCenter ? 20 : isMajor ? 14 : 10;
+          const innerR = sizes.gaugeRadius - length * scale;
           const outerR = sizes.gaugeRadius - 4 * scale;
           const cx = sizes.gaugeSize / 2;
           const cy = sizes.gaugeSize / 2;
@@ -398,13 +352,13 @@ export default function TunerScreen() {
           const end = polarToCartesian(cx, cy, outerR, angle);
           return (
             <Line
-              key={i}
+              key={cents}
               x1={start.x}
               y1={start.y}
               x2={end.x}
               y2={end.y}
-              stroke={angle === 0 ? colors.primary : colors.textSecondary}
-              strokeWidth={isMajor ? 3 * scale : 2 * scale}
+              stroke={isCenter ? colors.primary : colors.textSecondary}
+              strokeWidth={isCenter ? 3 * scale : isMajor ? 2 * scale : 1.5 * scale}
             />
           );
         })}
@@ -415,8 +369,8 @@ export default function TunerScreen() {
 
   const gaugeColor = info.locked ? colors.primary : "#fff";
   const centsValue = info.cents ?? 0;
-  const isFlat = centsValue < -2;
-  const isSharp = centsValue > 2;
+  const isFlat = centsValue < -LOCK_ENTER_CENTS;
+  const isSharp = centsValue > LOCK_ENTER_CENTS;
 
   // 권한이 필요한 경우 권한 요청 화면 표시 (iOS는 한 번 거부하면 설정 앱에서만 허용 가능)
   if (!isLoading && needsPermission) {
@@ -450,20 +404,76 @@ export default function TunerScreen() {
       edges={["top"]}
     >
       <ScreenBannerAd screen="tuner" />
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <ScrollView
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
+      {/* Instrument */}
+      <ScrollView
+        ref={instrumentScrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.instrumentScroll}
+        contentContainerStyle={[styles.instrumentRow, { gap: 8 * scale }]}
+        onLayout={(e: LayoutChangeEvent) => {
+          instrumentScrollWidthRef.current = e.nativeEvent.layout.width;
+          scrollToInstrument(settings.instrument, false);
+        }}
+        onContentSizeChange={(width) => {
+          instrumentContentWidthRef.current = width;
+          scrollToInstrument(settings.instrument, false);
+        }}
+      >
+        {INSTRUMENT_IDS.map((id) => {
+          const selected = id === settings.instrument;
+          return (
+            <TouchableOpacity
+              key={id}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              onPress={() => selectInstrument(id)}
+              onLayout={(e: LayoutChangeEvent) => {
+                const { x, width } = e.nativeEvent.layout;
+                instrumentLayoutsRef.current[id] = { x, width };
+                if (selected) scrollToInstrument(id, false);
+              }}
+              style={[
+                styles.instrumentButton,
+                {
+                  paddingHorizontal: 14 * scale,
+                  paddingVertical: 8 * scale,
+                  borderRadius: 18 * scale,
+                  backgroundColor: selected ? colors.primary : colors.surface,
+                },
+              ]}
+            >
+              <AppText
+                style={[
+                  styles.instrumentText,
+                  { fontSize: 13 * scale, color: selected ? "#fff" : colors.textSecondary },
+                ]}
+              >
+                {t(`tuner.instruments.${id}`)}
+              </AppText>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       {/* Mode Toggle */}
       <View style={[styles.modeToggle, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
           style={[
             styles.modeButton,
-            isStandardMode && { backgroundColor: colors.primary },
+            mode === "strings" && { backgroundColor: colors.primary },
           ]}
-          onPress={() => setIsStandardMode(true)}
+          onPress={() => selectMode("strings")}
         >
           <AppText
             style={[
               styles.modeText,
-              { color: isStandardMode ? "#fff" : colors.textSecondary },
+              { color: mode === "strings" ? "#fff" : colors.textSecondary },
             ]}
           >
             STANDARD
@@ -472,14 +482,14 @@ export default function TunerScreen() {
         <TouchableOpacity
           style={[
             styles.modeButton,
-            !isStandardMode && { backgroundColor: colors.primary },
+            mode === "chromatic" && { backgroundColor: colors.primary },
           ]}
-          onPress={() => setIsStandardMode(false)}
+          onPress={() => selectMode("chromatic")}
         >
           <AppText
             style={[
               styles.modeText,
-              { color: !isStandardMode ? "#fff" : colors.textSecondary },
+              { color: mode === "chromatic" ? "#fff" : colors.textSecondary },
             ]}
           >
             CHROMATIC
@@ -488,7 +498,7 @@ export default function TunerScreen() {
       </View>
 
       {/* Semicircular Gauge */}
-      <View style={[styles.gaugeContainer, { width: sizes.gaugeSize, height: sizes.gaugeSize / 2 + 60 }]}>
+      <View style={[styles.gaugeContainer, { width: sizes.gaugeSize, height: sizes.gaugeSize / 2 + 50 }]}>
         <Svg width={sizes.gaugeSize} height={sizes.gaugeSize / 2 + 40}>
           {gaugeBackground}
 
@@ -548,22 +558,33 @@ export default function TunerScreen() {
             ]}
           >
             {info.note ?? "-"}
-            {!isStandardMode && info.octave !== undefined && (
+            {info.octave !== undefined && (
               <AppText style={[styles.octave, { fontSize: sizes.octaveSize }]}>{info.octave}</AppText>
             )}
           </AppText>
         </Animated.View>
 
-        {info.locked && (
-          <View style={[styles.lockedBadge, { backgroundColor: colors.primary, paddingHorizontal: 16 * scale, paddingVertical: 6 * scale }]}>
-            <AppText style={[styles.lockedText, { fontSize: 12 * scale }]}>IN TUNE</AppText>
-          </View>
-        )}
+        {/* Always laid out, so locking doesn't shift everything below it */}
+        <View
+          accessibilityElementsHidden={!info.locked}
+          importantForAccessibility={info.locked ? "auto" : "no-hide-descendants"}
+          style={[
+            styles.lockedBadge,
+            {
+              opacity: info.locked ? 1 : 0,
+              backgroundColor: colors.primary,
+              paddingHorizontal: 16 * scale,
+              paddingVertical: 6 * scale,
+            },
+          ]}
+        >
+          <AppText style={[styles.lockedText, { fontSize: 12 * scale }]}>IN TUNE</AppText>
+        </View>
       </View>
 
       {/* Frequency Display */}
       <AppText style={[styles.hz, { fontSize: sizes.hzSize, color: colors.textSecondary }]}>
-        {info.hz ? `${info.hz.toFixed(1)} Hz` : "---"}
+        {info.hz ? `${formatHz(info.hz)} Hz` : "---"}
       </AppText>
 
       {/* Cents Display */}
@@ -583,57 +604,89 @@ export default function TunerScreen() {
             },
           ]}
         >
-          {info.cents != null
-            ? `${info.cents > 0 ? "+" : ""}${info.cents.toFixed(0)}`
-            : "0"}
+          {info.cents != null ? formatCents(info.cents) : "0.0"}
         </AppText>
         <AppText style={[styles.centsLabel, { fontSize: 14 * scale, color: colors.textSecondary }]}>
           cents
         </AppText>
       </View>
 
-      {/* Guitar Strings (Standard Mode Only) */}
-      {isStandardMode && (
-        <View style={[styles.stringsContainer, { gap: 12 * scale, marginTop: 32 * scale }]}>
-          {GUITAR_STRINGS.map((str, i) => {
-            const stringNum = 6 - i;
-            const isActive = info.guitarString === stringNum;
-            return (
-              <View
-                key={i}
-                style={[
-                  styles.stringIndicator,
-                  {
-                    width: sizes.stringWidth,
-                    height: sizes.stringHeight,
-                    borderRadius: 8 * scale,
-                    backgroundColor: isActive ? colors.primary : colors.surface,
-                    borderColor: isActive ? colors.primary : "transparent",
-                  },
-                ]}
-              >
-                <AppText
+      {/* Strings (Standard Mode Only): tap one to tune it no matter what's detected */}
+      {mode === "strings" && (
+        <View style={[styles.stringsArea, { marginTop: 20 * scale }]}>
+          <View style={[styles.stringsContainer, { gap: 12 * scale }]}>
+            {instrument.strings.map((string) => {
+              const isPinned = pinnedString === string.number;
+              const isActive = info.stringNumber === string.number;
+              return (
+                <TouchableOpacity
+                  key={string.number}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isPinned }}
+                  onPress={() => pinString(isPinned ? null : string.number)}
                   style={[
-                    styles.stringText,
-                    { fontSize: 18 * scale, color: isActive ? "#fff" : colors.textSecondary },
+                    styles.stringIndicator,
+                    {
+                      width: sizes.stringWidth,
+                      height: sizes.stringHeight,
+                      borderRadius: 8 * scale,
+                      backgroundColor: isActive
+                        ? colors.primary
+                        : isPinned
+                        ? colors.primaryLight
+                        : colors.surface,
+                      borderColor: isPinned || isActive ? colors.primary : "transparent",
+                    },
                   ]}
                 >
-                  {str}
-                </AppText>
-                <AppText
-                  style={[
-                    styles.stringNumber,
-                    { fontSize: 10 * scale, color: isActive ? "#fff" : colors.textSecondary },
-                  ]}
-                >
-                  {stringNum}
-                </AppText>
-              </View>
-            );
-          })}
+                  <AppText
+                    style={[
+                      styles.stringText,
+                      { fontSize: 18 * scale, color: isActive ? "#fff" : isPinned ? colors.primary : colors.textSecondary },
+                    ]}
+                  >
+                    {string.name}
+                  </AppText>
+                  <AppText
+                    style={[
+                      styles.stringNumber,
+                      { fontSize: 10 * scale, color: isActive ? "#fff" : isPinned ? colors.primary : colors.textSecondary },
+                    ]}
+                  >
+                    {string.number}
+                  </AppText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityState={{ selected: pinnedString == null }}
+            onPress={() => pinString(null)}
+            style={[
+              styles.autoButton,
+              {
+                marginTop: 10 * scale,
+                paddingHorizontal: 12 * scale,
+                paddingVertical: 4 * scale,
+                borderRadius: 12 * scale,
+                borderColor: pinnedString == null ? colors.primary : colors.border,
+                backgroundColor: pinnedString == null ? colors.primaryLight : "transparent",
+              },
+            ]}
+          >
+            <AppText
+              style={[
+                styles.autoText,
+                { fontSize: 11 * scale, color: pinnedString == null ? colors.primary : colors.textSecondary },
+              ]}
+            >
+              AUTO
+            </AppText>
+          </TouchableOpacity>
         </View>
       )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -643,8 +696,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    flex: 1,
-    padding: 24,
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -673,11 +727,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  instrumentScroll: {
+    alignSelf: "stretch",
+    flexGrow: 0,
+    marginHorizontal: -24, // scroll edge to edge, past the container's padding
+    marginBottom: 12,
+  },
+  instrumentRow: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  instrumentButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  instrumentText: {
+    fontWeight: "600",
+  },
   modeToggle: {
     flexDirection: "row",
     borderRadius: 12,
     padding: 4,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   modeButton: {
     paddingVertical: 10,
@@ -739,6 +811,9 @@ const styles = StyleSheet.create({
   centsLabel: {
     marginLeft: 4,
   },
+  stringsArea: {
+    alignItems: "center",
+  },
   stringsContainer: {
     flexDirection: "row",
   },
@@ -752,5 +827,12 @@ const styles = StyleSheet.create({
   },
   stringNumber: {
     marginTop: 2,
+  },
+  autoButton: {
+    borderWidth: 1,
+  },
+  autoText: {
+    fontWeight: "700",
+    letterSpacing: 1,
   },
 });

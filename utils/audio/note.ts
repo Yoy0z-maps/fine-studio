@@ -1,6 +1,6 @@
 const A4 = 440;
 
-const NOTE_NAMES = [
+export const NOTE_NAMES = [
   "C",
   "C#",
   "D",
@@ -23,15 +23,27 @@ export function midiToFreq(midi: number) {
   return A4 * Math.pow(2, (midi - 69) / 12);
 }
 
+export function midiToName(midi: number) {
+  return NOTE_NAMES[((midi % 12) + 12) % 12];
+}
+
+export function midiToOctave(midi: number) {
+  return Math.floor(midi / 12) - 1;
+}
+
+export function centsBetween(freq: number, reference: number) {
+  return 1200 * Math.log2(freq / reference);
+}
+
 export function freqToNoteInfo(freq: number) {
-  const midiFloat = freqToMidi(freq);
-  const midi = Math.round(midiFloat);
-
+  const midi = Math.round(freqToMidi(freq));
   const targetFreq = midiToFreq(midi);
-  const cents = 1200 * Math.log2(freq / targetFreq);
 
-  const name = NOTE_NAMES[((midi % 12) + 12) % 12];
-  const octave = Math.floor(midi / 12) - 1;
-
-  return { midi, name, octave, targetFreq, cents };
+  return {
+    midi,
+    name: midiToName(midi),
+    octave: midiToOctave(midi),
+    targetFreq,
+    cents: centsBetween(freq, targetFreq),
+  };
 }
