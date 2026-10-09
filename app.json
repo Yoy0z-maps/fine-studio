@@ -101,7 +101,8 @@
           }
         }
       ],
-      "react-native-google-mobile-ads"
+      "react-native-google-mobile-ads",
+      "./plugins/withPodDeploymentTarget"
     ],
     "experiments": {
       "typedRoutes": true,
