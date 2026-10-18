@@ -26,38 +26,32 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
-  const { user, isLoading, isOnboardingComplete, isTestMode } = useAuth();
+  const { isLoading, isOnboardingComplete, isTestMode } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
+  // Everything but the library works without an account: the first launch shows the onboarding,
+  // then the tabs. Login is asked for only when the library tab is opened (see (tabs)/_layout).
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "auth";
     const inOnboardingGroup = segments[0] === "onboarding";
 
-    if (!user && !isTestMode) {
-      // 로그인되지 않은 경우 → 로그인 화면으로 (테스트 모드 제외)
-      if (!inAuthGroup) {
-        router.replace("/auth/login");
-      }
-    } else if (!isOnboardingComplete && !isTestMode) {
-      // 로그인되었지만 온보딩 미완료 → 온보딩으로
+    if (!isOnboardingComplete && !isTestMode) {
+      // 온보딩 미완료 → 온보딩으로
       if (!inOnboardingGroup) {
         router.replace("/onboarding");
       }
-    } else {
-      // 로그인되고 온보딩 완료 → 메인 화면으로
-      if (inAuthGroup || inOnboardingGroup) {
-        router.replace("/(tabs)");
-      }
+    } else if (inOnboardingGroup) {
+      // 온보딩 완료 → 메인 화면으로
+      router.replace("/(tabs)");
     }
-  }, [user, isLoading, isOnboardingComplete, isTestMode, segments, router]);
+  }, [isLoading, isOnboardingComplete, isTestMode, segments, router]);
 
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="auth" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
     </Stack>
   );

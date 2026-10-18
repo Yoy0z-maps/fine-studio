@@ -5,7 +5,6 @@ import { userService } from "@/services/firebase/userService";
 import { auth } from "@/services/firebase/config";
 import { signOut as firebaseSignOut, onAuthStateChanged, User, deleteUser as firebaseDeleteUser } from "firebase/auth";
 import { AuthUser, UserPlan } from "@/types/user";
-import { router } from "expo-router";
 import { signOutGoogle, configureGoogleSignIn } from "@/services/firebase/googleSignIn";
 
 interface AuthContextType {
@@ -149,9 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setFirebaseUser(null);
     setIsTestMode(false);
-
-    // 로그인 화면으로 이동
-    router.replace("/auth/login");
+    // The rest of the app works signed out; the library asks to log in again when opened.
   };
 
   const deleteAccount = async () => {
@@ -179,9 +176,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setFirebaseUser(null);
       setIsTestMode(false);
-
-      // 5. 로그인 화면으로 이동
-      router.replace("/auth/login");
     } catch (error) {
       console.error("Failed to delete account:", error);
       throw error;

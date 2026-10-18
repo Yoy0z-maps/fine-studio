@@ -330,18 +330,18 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Account Section */}
+        {/* Account Section (signed in only: the app works without an account, and logging in
+            is offered from the library) */}
+        {user && (
         <View style={styles.section}>
           <AppText style={[styles.sectionTitle, { color: colors.text }]}>
             {t("settings.account")}
           </AppText>
-          {user && (
-            <AppText
-              style={[styles.sectionDescription, { color: colors.textSecondary }]}
-            >
-              {user.email || user.fullName || (user.authProvider === "google" ? t("settings.googleUser") : t("settings.appleUser"))}
-            </AppText>
-          )}
+          <AppText
+            style={[styles.sectionDescription, { color: colors.textSecondary }]}
+          >
+            {user.email || user.fullName || (user.authProvider === "google" ? t("settings.googleUser") : t("settings.appleUser"))}
+          </AppText>
 
           <TouchableOpacity
             style={[styles.signOutButton, { backgroundColor: colors.surface }]}
@@ -362,6 +362,7 @@ export default function SettingsScreen() {
             </AppText>
           </TouchableOpacity>
         </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

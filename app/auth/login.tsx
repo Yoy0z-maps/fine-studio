@@ -1,4 +1,5 @@
 import AppText from "@/components/AppText";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useColors } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthUser } from "@/types/user";
@@ -32,6 +33,19 @@ export default function LoginScreen() {
   const [isGoogleConfigured, setIsGoogleConfigured] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Opened over the tabs when the library needs an account: go back there once signed in (the
+  // tab layout then opens the library).
+  const canClose = router.canGoBack();
+  const leaveLogin = () => {
+    if (!isOnboardingComplete) {
+      router.replace("/onboarding");
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
+
   // 테스트 모드: 로고 5번 클릭
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,7 +65,7 @@ export default function LoginScreen() {
       tapCountRef.current = 0;
       // 테스트 모드로 진입
       enterTestMode();
-      router.replace("/(tabs)");
+      leaveLogin();
     }
   };
 
@@ -119,11 +133,7 @@ export default function LoginScreen() {
       await signIn(user);
 
       // 6. 네비게이션
-      if (!isOnboardingComplete) {
-        router.replace("/onboarding");
-      } else {
-        router.replace("/(tabs)");
-      }
+      leaveLogin();
     } catch (error: any) {
       console.error("Sign in error:", error);
       if (error.code === "ERR_REQUEST_CANCELED") {
@@ -146,11 +156,7 @@ export default function LoginScreen() {
       await signIn(authUser);
 
       // 네비게이션
-      if (!isOnboardingComplete) {
-        router.replace("/onboarding");
-      } else {
-        router.replace("/(tabs)");
-      }
+      leaveLogin();
     } catch (error: any) {
       console.error("Google Sign in error:", error);
       if (error.code === "ERR_REQUEST_CANCELED") {
@@ -232,6 +238,17 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {canClose && (
+        <Pressable
+          style={styles.closeButton}
+          onPress={() => router.back()}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={t("game.close")}
+        >
+          <Ionicons name="close" size={28} color={colors.textSecondary} />
+        </Pressable>
+      )}
       <View style={styles.content}>
         <Pressable style={styles.logoContainer} onPress={handleLogoTap}>
           <View style={[styles.logoCircle, { backgroundColor: colors.primary }]}>
@@ -300,6 +317,12 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  closeButton: {
+    alignSelf: "flex-end",
+    marginTop: 8,
+    marginRight: 16,
+    padding: 4,
   },
   content: {
     flex: 1,
