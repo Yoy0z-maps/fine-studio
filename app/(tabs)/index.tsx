@@ -1,5 +1,5 @@
 import AppText from "@/components/AppText";
-import InstrumentRoller, { ROLLER_WIDTH } from "@/components/tuner/InstrumentRoller";
+import InstrumentRoller, { ROLLER_HEIGHT, ROLLER_WIDTH } from "@/components/tuner/InstrumentRoller";
 import { useColors } from "@/contexts/ThemeContext";
 import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
 import { useDeviceScale } from "@/hooks/useDeviceScale";
@@ -133,20 +133,26 @@ export default function TunerScreen() {
       hzSize: 16 * scale,
       stringWidth: 44 * scale,
       stringHeight: 56 * scale,
-      stringGap: 8 * scale,
-      rowGap: 12 * scale,
+      stringGap: 12 * scale,
       needleHeight: (gaugeSize / 2 - 20 * scale) - 20,
     };
   }, [scale]);
 
-  // The string chips share their row with the instrument wheel: narrow them to fit (a guitar's
-  // six on a 375 pt wide phone).
+  const contentWidth = windowWidth - 48; // inside the screen's 24 pt side padding
   const stringCount = instrument.strings.length;
   const stringWidth = Math.min(
     sizes.stringWidth,
-    (windowWidth - 48 - ROLLER_WIDTH * scale - sizes.rowGap - sizes.stringGap * (stringCount - 1)) /
-      stringCount
+    (contentWidth - sizes.stringGap * (stringCount - 1)) / stringCount
   );
+
+  // The instrument wheel sits right of the note, under the gauge's SHARP label (at
+  // gaugeRadius - 10 from the center), its middle level with the middle of the note.
+  const rollerWidth = ROLLER_WIDTH * scale;
+  const rollerLeft = Math.min(
+    contentWidth / 2 + sizes.gaugeRadius - 10 * scale - rollerWidth / 2,
+    contentWidth + 16 - rollerWidth
+  );
+  const rollerTop = 8 + sizes.noteSize * 0.6 - (ROLLER_HEIGHT * scale) / 2;
 
   // Animation values
   const needleRotation = useSharedValue(0);
@@ -492,7 +498,8 @@ export default function TunerScreen() {
         </Animated.View>
       </View>
 
-      {/* Note Display */}
+      {/* Note Display, with the instrument wheel to its right */}
+      <View style={[styles.noteRow, { width: contentWidth }]}>
       <View style={styles.noteContainer}>
         <Animated.View style={noteAnimatedStyle}>
           <AppText
@@ -525,6 +532,10 @@ export default function TunerScreen() {
           <AppText style={[styles.lockedText, { fontSize: 12 * scale }]}>IN TUNE</AppText>
         </View>
       </View>
+        <View style={[styles.rollerSlot, { left: rollerLeft, top: rollerTop }]}>
+          <InstrumentRoller value={settings.instrument} onChange={selectInstrument} scale={scale} />
+        </View>
+      </View>
 
       {/* Frequency Display */}
       <AppText style={[styles.hz, { fontSize: sizes.hzSize, color: colors.textSecondary }]}>
@@ -555,11 +566,9 @@ export default function TunerScreen() {
         </AppText>
       </View>
 
-      {/* Strings (Standard Mode Only; tap one to tune it no matter what's detected) and the
-          instrument wheel */}
-      <View style={[styles.bottomRow, { marginTop: 20 * scale, gap: sizes.rowGap }]}>
+      {/* Strings (Standard Mode Only): tap one to tune it no matter what's detected */}
       {mode === "strings" && (
-        <View style={styles.stringsArea}>
+        <View style={[styles.stringsArea, { marginTop: 20 * scale }]}>
           <View style={[styles.stringsContainer, { gap: sizes.stringGap }]}>
             {instrument.strings.map((string) => {
               const isPinned = pinnedString === string.number;
@@ -632,8 +641,6 @@ export default function TunerScreen() {
           </TouchableOpacity>
         </View>
       )}
-        <InstrumentRoller value={settings.instrument} onChange={selectInstrument} scale={scale} />
-      </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -707,10 +714,16 @@ const styles = StyleSheet.create({
   needleBase: {
     marginTop: -4,
   },
+  noteRow: {
+    alignItems: "center",
+  },
   noteContainer: {
     alignItems: "center",
     marginTop: 8,
     minHeight: 100,
+  },
+  rollerSlot: {
+    position: "absolute",
   },
   note: {
     fontWeight: "800",
@@ -740,10 +753,6 @@ const styles = StyleSheet.create({
   },
   centsLabel: {
     marginLeft: 4,
-  },
-  bottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
   },
   stringsArea: {
     alignItems: "center",

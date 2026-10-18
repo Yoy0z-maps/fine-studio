@@ -6,7 +6,6 @@ import * as Haptics from "expo-haptics";
 import { memo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Pressable,
   StyleSheet,
   View,
   type AccessibilityActionEvent,
@@ -20,12 +19,15 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
-const ITEM_HEIGHT = 52;
+const ITEM_HEIGHT = 44;
 export const ROLLER_WIDTH = 72;
+/** The selected item plus half of each neighbor (seen only while rolling). */
+export const ROLLER_HEIGHT = ITEM_HEIGHT * 2;
 const COUNT = INSTRUMENT_IDS.length;
 
 const clampIndex = (i: number) => Math.min(COUNT - 1, Math.max(0, i));
@@ -34,30 +36,34 @@ type ItemProps = {
   id: InstrumentId;
   index: number;
   scrollY: SharedValue<number>;
+  /** 0 at rest, 1 while the wheel is being rolled. */
+  rolling: SharedValue<number>;
   itemHeight: number;
   selected: boolean;
   scale: number;
-  onPress: (index: number) => void;
 };
 
 const RollerItem = memo(function RollerItem({
   id,
   index,
   scrollY,
+  rolling,
   itemHeight,
   selected,
   scale,
-  onPress,
 }: ItemProps) {
   const colors = useColors();
   const { t } = useTranslation();
 
-  // Items turn away like the face of a drum as they leave the center.
+  // At rest only the selected icon and name show; while rolling, the neighbors fade in and turn
+  // away like the faces of a drum as they leave the middle.
   const animatedStyle = useAnimatedStyle(() => {
-    const offset = (scrollY.value - index * itemHeight) / itemHeight; // > 0: above the center
+    const offset = (scrollY.value - index * itemHeight) / itemHeight; // > 0: above the middle
     const distance = Math.abs(offset);
+    const onDrum = interpolate(distance, [0, 1, 1.6], [1, 0.4, 0], Extrapolation.CLAMP);
+    const atRest = interpolate(distance, [0, 0.5], [1, 0], Extrapolation.CLAMP);
     return {
-      opacity: interpolate(distance, [0, 1, 1.6], [1, 0.4, 0], Extrapolation.CLAMP),
+      opacity: onDrum * (atRest + (1 - atRest) * rolling.value),
       transform: [
         { perspective: 400 },
         { rotateX: `${interpolate(offset, [-1.6, 0, 1.6], [-75, 0, 75], Extrapolation.CLAMP)}deg` },
@@ -67,25 +73,23 @@ const RollerItem = memo(function RollerItem({
   });
 
   return (
-    <Pressable onPress={() => onPress(index)} style={{ height: itemHeight }}>
-      <Animated.View style={[styles.item, { height: itemHeight }, animatedStyle]}>
-        <InstrumentIcon
-          instrument={id}
-          size={30 * scale}
-          color={selected ? colors.primary : colors.text}
-          holeColor={colors.surface}
-        />
-        <AppText
-          numberOfLines={1}
-          style={[
-            styles.label,
-            { fontSize: 10 * scale, color: selected ? colors.primary : colors.textSecondary },
-          ]}
-        >
-          {t(`tuner.instruments.${id}`)}
-        </AppText>
-      </Animated.View>
-    </Pressable>
+    <Animated.View style={[styles.item, { height: itemHeight }, animatedStyle]}>
+      <InstrumentIcon
+        instrument={id}
+        size={28 * scale}
+        color={selected ? colors.primary : colors.text}
+        holeColor={colors.background}
+      />
+      <AppText
+        numberOfLines={1}
+        style={[
+          styles.label,
+          { fontSize: 10 * scale, color: selected ? colors.primary : colors.textSecondary },
+        ]}
+      >
+        {t(`tuner.instruments.${id}`)}
+      </AppText>
+    </Animated.View>
   );
 });
 
@@ -96,12 +100,11 @@ type Props = {
 };
 
 /**
- * A drum wheel of instrument icons: roll it up or down, or tap the instrument above or below the
- * middle, to switch. The choice is made once the wheel comes to rest, so rolling past the bass
- * doesn't restart the audio stream on the way.
+ * A drum wheel of instrument icons: roll it up or down to switch. At rest it shows just the
+ * selected instrument's icon and name. The choice is made once the wheel comes to rest, so rolling
+ * past the bass doesn't restart the audio stream on the way.
  */
 function InstrumentRoller({ value, onChange, scale }: Props) {
-  const colors = useColors();
   const { t } = useTranslation();
   const itemHeight = ITEM_HEIGHT * scale;
   const index = clampIndex(INSTRUMENT_IDS.indexOf(value));
@@ -109,6 +112,7 @@ function InstrumentRoller({ value, onChange, scale }: Props) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollY = useSharedValue(index * itemHeight);
   const centeredIndex = useSharedValue(index); // for the haptic tick as items pass the middle
+  const rolling = useSharedValue(0);
   const momentumRef = useRef(false);
   const targetRef = useRef<number | null>(null); // a scroll this component started itself
   // Where the wheel starts. Only ever the first value: on iOS a contentOffset prop that changes
@@ -168,7 +172,10 @@ function InstrumentRoller({ value, onChange, scale }: Props) {
     [scrollToIndex, select]
   );
 
-  const settleAt = (y: number) => select(Math.round(y / itemHeight));
+  const settleAt = (y: number) => {
+    rolling.value = withTiming(0, { duration: 250 });
+    select(Math.round(y / itemHeight));
+  };
 
   const onAccessibilityAction = (event: AccessibilityActionEvent) => {
     if (event.nativeEvent.actionName === "increment") rollTo(index + 1);
@@ -183,15 +190,7 @@ function InstrumentRoller({ value, onChange, scale }: Props) {
       accessibilityValue={{ text: t(`tuner.instruments.${value}`) }}
       accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
       onAccessibilityAction={onAccessibilityAction}
-      style={[
-        styles.container,
-        {
-          width: ROLLER_WIDTH * scale,
-          height: itemHeight * 2, // the middle item plus half of each neighbor
-          borderRadius: 14 * scale,
-          backgroundColor: colors.surface,
-        },
-      ]}
+      style={[styles.container, { width: ROLLER_WIDTH * scale, height: ROLLER_HEIGHT * scale }]}
     >
       <Animated.ScrollView
         ref={scrollRef}
@@ -212,6 +211,7 @@ function InstrumentRoller({ value, onChange, scale }: Props) {
         }}
         onScrollBeginDrag={() => {
           momentumRef.current = false;
+          rolling.value = withTiming(1, { duration: 120 });
         }}
         onMomentumScrollBegin={() => {
           momentumRef.current = true;
@@ -234,29 +234,13 @@ function InstrumentRoller({ value, onChange, scale }: Props) {
             id={id}
             index={i}
             scrollY={scrollY}
+            rolling={rolling}
             itemHeight={itemHeight}
             selected={id === value}
             scale={scale}
-            onPress={rollTo}
           />
         ))}
       </Animated.ScrollView>
-
-      {/* Selection window */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.window,
-          {
-            top: itemHeight / 2,
-            height: itemHeight,
-            left: 4 * scale,
-            right: 4 * scale,
-            borderRadius: 10 * scale,
-            borderColor: colors.primary,
-          },
-        ]}
-      />
     </View>
   );
 }
@@ -272,10 +256,6 @@ const styles = StyleSheet.create({
   label: {
     fontWeight: "600",
     marginTop: 2,
-  },
-  window: {
-    position: "absolute",
-    borderWidth: 1.5,
   },
 });
 
