@@ -44,6 +44,7 @@
     "flat": "BÉMOL",
     "sharp": "DIÈSE",
     "cents": "cents",
+    "instrument": "Instrument",
     "instruments": {
       "guitar": "Guitare",
       "ukulele": "Ukulélé",

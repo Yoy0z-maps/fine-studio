@@ -44,6 +44,7 @@
     "flat": "フラット",
     "sharp": "シャープ",
     "cents": "セント",
+    "instrument": "楽器",
     "instruments": {
       "guitar": "ギター",
       "ukulele": "ウクレレ",

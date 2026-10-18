@@ -1,9 +1,10 @@
 import AppText from "@/components/AppText";
+import InstrumentRoller, { ROLLER_WIDTH } from "@/components/tuner/InstrumentRoller";
 import { useColors } from "@/contexts/ThemeContext";
 import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
 import { useDeviceScale } from "@/hooks/useDeviceScale";
 import { useTunerSettings } from "@/hooks/useTunerSettings";
-import { INSTRUMENT_IDS, INSTRUMENTS, InstrumentId } from "@/utils/audio/instruments";
+import { INSTRUMENTS, InstrumentId } from "@/utils/audio/instruments";
 import {
   LOCK_ENTER_CENTS,
   SILENCE_THRESHOLD,
@@ -14,7 +15,6 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import ExpoPcmStream, { type PitchEvent } from "expo-pcm-stream";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { useTranslation } from "react-i18next";
 import {
   AppState,
   ScrollView,
@@ -23,7 +23,6 @@ import {
   View,
   Dimensions,
   Platform,
-  type LayoutChangeEvent,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -110,8 +109,7 @@ const createArcPath = (
 
 export default function TunerScreen() {
   const colors = useColors();
-  const { t } = useTranslation();
-  const { scale } = useDeviceScale();
+  const { scale, width: windowWidth } = useDeviceScale();
   const { status, isLoading, isBlocked, checkPermission, requestPermission, openSettings } =
     useMicrophonePermission();
   // iOS asks for the permission itself when the stream starts; Android needs it granted first.
@@ -135,9 +133,20 @@ export default function TunerScreen() {
       hzSize: 16 * scale,
       stringWidth: 44 * scale,
       stringHeight: 56 * scale,
+      stringGap: 8 * scale,
+      rowGap: 12 * scale,
       needleHeight: (gaugeSize / 2 - 20 * scale) - 20,
     };
   }, [scale]);
+
+  // The string chips share their row with the instrument wheel: narrow them to fit (a guitar's
+  // six on a 375 pt wide phone).
+  const stringCount = instrument.strings.length;
+  const stringWidth = Math.min(
+    sizes.stringWidth,
+    (windowWidth - 48 - ROLLER_WIDTH * scale - sizes.rowGap - sizes.stringGap * (stringCount - 1)) /
+      stringCount
+  );
 
   // Animation values
   const needleRotation = useSharedValue(0);
@@ -273,9 +282,13 @@ export default function TunerScreen() {
     }, [needsPermission, settingsLoaded, windowSize, checkPermission, setNeedle, resetDisplay]),
   );
 
-  const selectInstrument = (id: InstrumentId) => {
-    if (id !== settings.instrument) updateSettings({ instrument: id });
-  };
+  // Stable, so the (memoized) instrument wheel doesn't re-render with every pitch reading.
+  const selectInstrument = useCallback(
+    (id: InstrumentId) => {
+      if (id !== settings.instrument) updateSettings({ instrument: id });
+    },
+    [settings.instrument, updateSettings]
+  );
 
   const selectMode = (next: TunerMode) => {
     if (next !== mode) updateSettings({ mode: next });
@@ -285,23 +298,6 @@ export default function TunerScreen() {
     setPinnedString(stringNumber);
     engineRef.current!.pinString(stringNumber);
   };
-
-  // Keep the selected instrument in view: the row scrolls on narrow screens and long names.
-  const instrumentScrollRef = useRef<ScrollView>(null);
-  const instrumentLayoutsRef = useRef<Partial<Record<InstrumentId, { x: number; width: number }>>>({});
-  const instrumentScrollWidthRef = useRef(0);
-  const instrumentContentWidthRef = useRef(0);
-  const scrollToInstrument = useCallback((id: InstrumentId, animated: boolean) => {
-    const layout = instrumentLayoutsRef.current[id];
-    const viewWidth = instrumentScrollWidthRef.current;
-    const maxX = instrumentContentWidthRef.current - viewWidth;
-    if (!layout || viewWidth <= 0 || maxX <= 0) return;
-    const x = layout.x + layout.width / 2 - viewWidth / 2;
-    instrumentScrollRef.current?.scrollTo({ x: Math.max(0, Math.min(maxX, x)), animated });
-  }, []);
-  useEffect(() => {
-    scrollToInstrument(settings.instrument, true);
-  }, [settings.instrument, scrollToInstrument]);
 
   const noteAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: noteScale.value }],
@@ -409,58 +405,6 @@ export default function TunerScreen() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-      {/* Instrument */}
-      <ScrollView
-        ref={instrumentScrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.instrumentScroll}
-        contentContainerStyle={[styles.instrumentRow, { gap: 8 * scale }]}
-        onLayout={(e: LayoutChangeEvent) => {
-          instrumentScrollWidthRef.current = e.nativeEvent.layout.width;
-          scrollToInstrument(settings.instrument, false);
-        }}
-        onContentSizeChange={(width) => {
-          instrumentContentWidthRef.current = width;
-          scrollToInstrument(settings.instrument, false);
-        }}
-      >
-        {INSTRUMENT_IDS.map((id) => {
-          const selected = id === settings.instrument;
-          return (
-            <TouchableOpacity
-              key={id}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              onPress={() => selectInstrument(id)}
-              onLayout={(e: LayoutChangeEvent) => {
-                const { x, width } = e.nativeEvent.layout;
-                instrumentLayoutsRef.current[id] = { x, width };
-                if (selected) scrollToInstrument(id, false);
-              }}
-              style={[
-                styles.instrumentButton,
-                {
-                  paddingHorizontal: 14 * scale,
-                  paddingVertical: 8 * scale,
-                  borderRadius: 18 * scale,
-                  backgroundColor: selected ? colors.primary : colors.surface,
-                },
-              ]}
-            >
-              <AppText
-                style={[
-                  styles.instrumentText,
-                  { fontSize: 13 * scale, color: selected ? "#fff" : colors.textSecondary },
-                ]}
-              >
-                {t(`tuner.instruments.${id}`)}
-              </AppText>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
       {/* Mode Toggle */}
       <View style={[styles.modeToggle, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
@@ -611,10 +555,12 @@ export default function TunerScreen() {
         </AppText>
       </View>
 
-      {/* Strings (Standard Mode Only): tap one to tune it no matter what's detected */}
+      {/* Strings (Standard Mode Only; tap one to tune it no matter what's detected) and the
+          instrument wheel */}
+      <View style={[styles.bottomRow, { marginTop: 20 * scale, gap: sizes.rowGap }]}>
       {mode === "strings" && (
-        <View style={[styles.stringsArea, { marginTop: 20 * scale }]}>
-          <View style={[styles.stringsContainer, { gap: 12 * scale }]}>
+        <View style={styles.stringsArea}>
+          <View style={[styles.stringsContainer, { gap: sizes.stringGap }]}>
             {instrument.strings.map((string) => {
               const isPinned = pinnedString === string.number;
               const isActive = info.stringNumber === string.number;
@@ -627,7 +573,7 @@ export default function TunerScreen() {
                   style={[
                     styles.stringIndicator,
                     {
-                      width: sizes.stringWidth,
+                      width: stringWidth,
                       height: sizes.stringHeight,
                       borderRadius: 8 * scale,
                       backgroundColor: isActive
@@ -686,6 +632,8 @@ export default function TunerScreen() {
           </TouchableOpacity>
         </View>
       )}
+        <InstrumentRoller value={settings.instrument} onChange={selectInstrument} scale={scale} />
+      </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -725,24 +673,6 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "600",
-  },
-  instrumentScroll: {
-    alignSelf: "stretch",
-    flexGrow: 0,
-    marginHorizontal: -24, // scroll edge to edge, past the container's padding
-    marginBottom: 12,
-  },
-  instrumentRow: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  instrumentButton: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  instrumentText: {
     fontWeight: "600",
   },
   modeToggle: {
@@ -810,6 +740,10 @@ const styles = StyleSheet.create({
   },
   centsLabel: {
     marginLeft: 4,
+  },
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   stringsArea: {
     alignItems: "center",

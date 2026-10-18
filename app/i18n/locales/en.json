@@ -44,6 +44,7 @@
     "flat": "FLAT",
     "sharp": "SHARP",
     "cents": "cents",
+    "instrument": "Instrument",
     "instruments": {
       "guitar": "Guitar",
       "ukulele": "Ukulele",
