@@ -19,7 +19,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "5",
+      "buildNumber": "6",
       "usesAppleSignIn": true,
       "infoPlist": {
         "CFBundleLocalizations": ["en", "ko", "ja", "zh", "es", "fr"],
@@ -32,7 +32,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
-      "versionCode": 10,
+      "versionCode": 11,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": ["RECORD_AUDIO"],
